@@ -22,6 +22,18 @@ impl Debug for ThreadKey {
 	}
 }
 
+impl Drop for ThreadKey {
+	fn drop(&mut self) {
+		KEY.with(|thread_lock| {
+			let mut key = thread_lock.lock();
+
+			// safety: this ThreadKey is about to be destroyed, so there'll
+			//         still only be one ThreadKey
+			*key = Some(unsafe { Self::new() });
+		})
+	}
+}
+
 impl ThreadKey {
 	/// Create a new `ThreadKey`.
 	///
@@ -38,7 +50,7 @@ impl ThreadKey {
 	///
 	/// The first time this is called, it will successfully return a
 	/// `ThreadKey`. However, future calls to this function will return
-	/// [`None`], unless the key is unlocked first.
+	/// [`None`], unless the key is dropped or unlocked first.
 	pub fn lock() -> Option<Self> {
 		KEY.with(|thread_lock| thread_lock.lock().take())
 	}
@@ -47,10 +59,7 @@ impl ThreadKey {
 	///
 	/// After this method is called, a call to [`ThreadKey::lock`] will return
 	/// this `ThreadKey`.
-	pub fn unlock(lock: ThreadKey) {
-		KEY.with(|thread_lock| {
-			let mut thread_lock = thread_lock.lock();
-			*thread_lock = Some(lock);
-		})
+	pub fn unlock(key: ThreadKey) {
+		drop(key)
 	}
 }
