@@ -1,13 +1,12 @@
 use std::any::type_name;
 use std::fmt::{self, Debug};
 
-use parking_lot::Mutex;
-
 mod lock;
 
+pub use lock::Lock;
+
 thread_local! {
-	// safety: this is the only place where a ThreadLock is created
-	pub static KEY: Mutex<Option<ThreadKey>> = Mutex::new(Some(unsafe { ThreadKey::new() }));
+	pub static KEY: Lock = Lock::new();
 }
 
 /// The key for the current thread.
@@ -26,23 +25,13 @@ impl Debug for ThreadKey {
 
 impl Drop for ThreadKey {
 	fn drop(&mut self) {
-		KEY.with(|thread_lock| {
-			let mut key = thread_lock.lock();
-
-			// safety: this ThreadKey is about to be destroyed, so there'll
-			//         still only be one ThreadKey
-			*key = Some(unsafe { Self::new() });
-		})
+		KEY.with(|lock| lock.unlock());
 	}
 }
 
 impl ThreadKey {
-	/// Create a new `ThreadKey`.
-	///
-	/// # Safety
-	///
-	/// There should only be one `ThreadKey` per thread.
-	unsafe fn new() -> Self {
+	/// Create a new `ThreadKey`. There should only be one `ThreadKey` per thread.
+	fn new() -> Self {
 		Self {
 			_priv: std::ptr::null(),
 		}
@@ -54,7 +43,7 @@ impl ThreadKey {
 	/// `ThreadKey`. However, future calls to this function will return
 	/// [`None`], unless the key is dropped or unlocked first.
 	pub fn lock() -> Option<Self> {
-		KEY.with(|thread_lock| thread_lock.lock().take())
+		KEY.with(|lock| lock.try_lock().then_some(Self::new()))
 	}
 
 	/// Unlocks the `ThreadKey`.
