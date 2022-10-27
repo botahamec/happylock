@@ -5,7 +5,7 @@ thread_local! {
 	pub static KEY: Mutex<Option<ThreadKey>> = Mutex::new(Some(unsafe { ThreadKey::new() }));
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct ThreadKey {
 	_priv: *const (), // this isn't Send or Sync
 }
