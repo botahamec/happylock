@@ -10,7 +10,7 @@ use thread_local::ThreadLocal;
 
 mod lock;
 
-pub use lock::{Key, Lock};
+use lock::{Key, Lock};
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 
