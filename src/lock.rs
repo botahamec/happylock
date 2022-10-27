@@ -12,7 +12,7 @@ pub struct Key<'a> {
 }
 
 impl<'a> Key<'a> {
-	fn new(lock: &'a Lock) -> Self {
+	const fn new(lock: &'a Lock) -> Self {
 		Self { lock }
 	}
 }
@@ -26,6 +26,7 @@ impl<'a> Drop for Key<'a> {
 
 impl Lock {
 	/// Create a new unlocked `Lock`.
+	#[must_use]
 	pub const fn new() -> Self {
 		Self {
 			is_locked: AtomicBool::new(false),
@@ -52,10 +53,10 @@ impl Lock {
 	/// means the program no longer has a reference to the key, but it has not
 	/// been dropped.
 	unsafe fn force_unlock(&self) {
-		self.is_locked.store(false, Ordering::Release)
+		self.is_locked.store(false, Ordering::Release);
 	}
 
 	pub fn unlock(key: Key) {
-		drop(key)
+		drop(key);
 	}
 }

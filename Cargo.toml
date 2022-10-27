@@ -2,6 +2,8 @@
 name = "happylock"
 version = "0.1.0"
 edition = "2021"
+description = "Locks without Deadlocks"
+license = "Unlicense"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -1,3 +1,6 @@
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+
 use std::any::type_name;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
@@ -26,11 +29,12 @@ impl Debug for ThreadKey {
 }
 
 impl ThreadKey {
-	/// Get the current thread's `ThreadKey, if it's not already taken.
+	/// Get the current thread's `ThreadKey`, if it's not already taken.
 	///
 	/// The first time this is called, it will successfully return a
 	/// `ThreadKey`. However, future calls to this function will return
 	/// [`None`], unless the key is dropped or unlocked first.
+	#[must_use]
 	pub fn lock() -> Option<Self> {
 		KEY.get_or_default().try_lock().map(|key| Self {
 			phantom: PhantomData,
@@ -42,7 +46,7 @@ impl ThreadKey {
 	///
 	/// After this method is called, a call to [`ThreadKey::lock`] will return
 	/// this `ThreadKey`.
-	pub fn unlock(key: ThreadKey) {
-		drop(key)
+	pub fn unlock(key: Self) {
+		drop(key);
 	}
 }
