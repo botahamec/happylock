@@ -57,7 +57,7 @@ impl Lock {
 	/// This should only be called if the key to the lock has been "lost". That
 	/// means the program no longer has a reference to the key, but it has not
 	/// been dropped.
-	unsafe fn force_unlock(&self) {
+	pub unsafe fn force_unlock(&self) {
 		self.is_locked.store(false, Ordering::Release);
 	}
 

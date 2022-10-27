@@ -50,4 +50,15 @@ impl ThreadKey {
 	pub fn unlock(key: Self) {
 		drop(key);
 	}
+
+	/// Unlocks the `ThreadKey` without consuming it.
+	///
+	/// # Safety
+	///
+	/// This should only be called if the `ThreadKey` to the lock has been
+	/// "lost". That means the program no longer has a reference to the key,
+	/// but it has not been dropped.
+	pub unsafe fn force_unlock() {
+		KEY.get_or_default().force_unlock();
+	}
 }
