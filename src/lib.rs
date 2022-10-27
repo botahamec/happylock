@@ -1,14 +1,30 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+use parking_lot::Mutex;
+
+thread_local! {
+	// safety: this is the only place where a ThreadLock is created
+	pub static KEY: Mutex<Option<ThreadKey>> = Mutex::new(Some(unsafe { ThreadKey::new() }));
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct ThreadKey {
+	_priv: *const (), // this isn't Send or Sync
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+impl ThreadKey {
+	unsafe fn new() -> Self {
+		Self {
+			_priv: std::ptr::null(),
+		}
+	}
+
+	pub fn lock() -> Option<Self> {
+		KEY.with(|thread_lock| thread_lock.lock().take())
+	}
+
+	pub fn unlock(lock: ThreadKey) {
+		KEY.with(|thread_lock| {
+			let mut thread_lock = thread_lock.lock();
+			*thread_lock = Some(lock);
+		})
+	}
 }
