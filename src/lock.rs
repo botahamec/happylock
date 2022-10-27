@@ -6,12 +6,17 @@ pub struct Lock {
 	is_locked: AtomicBool,
 }
 
+/// A key for a lock.
+///
+/// This key is needed in order to unlock a [`Lock`]. The [`Lock`] is
+/// automatically unlocked if this key is dropped.
 #[derive(Debug)]
 pub struct Key<'a> {
 	lock: &'a Lock,
 }
 
 impl<'a> Key<'a> {
+	/// Create a key to a lock.
 	const fn new(lock: &'a Lock) -> Self {
 		Self { lock }
 	}
