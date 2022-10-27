@@ -61,6 +61,7 @@ impl Lock {
 		self.is_locked.store(false, Ordering::Release);
 	}
 
+	/// Unlock the lock, consuming its key.
 	pub fn unlock(key: Key) {
 		drop(key);
 	}
