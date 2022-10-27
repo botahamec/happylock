@@ -1,3 +1,5 @@
+use std::fmt::{self, Debug};
+
 use parking_lot::Mutex;
 
 thread_local! {
@@ -5,9 +7,14 @@ thread_local! {
 	pub static KEY: Mutex<Option<ThreadKey>> = Mutex::new(Some(unsafe { ThreadKey::new() }));
 }
 
-#[derive(Debug)]
 pub struct ThreadKey {
 	_priv: *const (), // this isn't Send or Sync
+}
+
+impl Debug for ThreadKey {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		"ThreadKey".fmt(f)
+	}
 }
 
 impl ThreadKey {
