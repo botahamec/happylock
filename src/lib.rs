@@ -3,6 +3,8 @@ use std::fmt::{self, Debug};
 
 use parking_lot::Mutex;
 
+mod lock;
+
 thread_local! {
 	// safety: this is the only place where a ThreadLock is created
 	pub static KEY: Mutex<Option<ThreadKey>> = Mutex::new(Some(unsafe { ThreadKey::new() }));
