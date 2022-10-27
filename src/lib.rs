@@ -1,20 +1,22 @@
 use std::any::type_name;
 use std::fmt::{self, Debug};
+use std::marker::PhantomData;
 
 mod lock;
 
-pub use lock::Lock;
+pub use lock::{Key, Lock};
+use once_cell::sync::Lazy;
+use thread_local::ThreadLocal;
 
-thread_local! {
-	pub static KEY: Lock = Lock::new();
-}
+static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 
 /// The key for the current thread.
 ///
 /// Only one of these exist per thread. To get the current thread's key, call
 /// [`ThreadKey::lock`].
 pub struct ThreadKey {
-	_priv: *const (), // this isn't Send or Sync
+	phantom: PhantomData<*const ()>, // implement !Send and !Sync
+	_key: Key<'static>,
 }
 
 impl Debug for ThreadKey {
@@ -23,27 +25,17 @@ impl Debug for ThreadKey {
 	}
 }
 
-impl Drop for ThreadKey {
-	fn drop(&mut self) {
-		KEY.with(|lock| lock.unlock());
-	}
-}
-
 impl ThreadKey {
-	/// Create a new `ThreadKey`. There should only be one `ThreadKey` per thread.
-	fn new() -> Self {
-		Self {
-			_priv: std::ptr::null(),
-		}
-	}
-
 	/// Get the current thread's `ThreadKey, if it's not already taken.
 	///
 	/// The first time this is called, it will successfully return a
 	/// `ThreadKey`. However, future calls to this function will return
 	/// [`None`], unless the key is dropped or unlocked first.
 	pub fn lock() -> Option<Self> {
-		KEY.with(|lock| lock.try_lock().then_some(Self::new()))
+		KEY.get_or_default().try_lock().map(|key| Self {
+			phantom: PhantomData,
+			_key: key,
+		})
 	}
 
 	/// Unlocks the `ThreadKey`.
