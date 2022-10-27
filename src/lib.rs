@@ -5,11 +5,12 @@ use std::any::type_name;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 
+use once_cell::sync::Lazy;
+use thread_local::ThreadLocal;
+
 mod lock;
 
 pub use lock::{Key, Lock};
-use once_cell::sync::Lazy;
-use thread_local::ThreadLocal;
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 
