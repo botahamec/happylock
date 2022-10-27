@@ -1,3 +1,4 @@
+use std::any::type_name;
 use std::fmt::{self, Debug};
 
 use parking_lot::Mutex;
@@ -13,7 +14,7 @@ pub struct ThreadKey {
 
 impl Debug for ThreadKey {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		"ThreadKey".fmt(f)
+		type_name::<Self>().fmt(f)
 	}
 }
 
