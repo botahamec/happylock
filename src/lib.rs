@@ -1,5 +1,6 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
+#![allow(clippy::module_name_repetitions)]
 
 use std::any::type_name;
 use std::fmt::{self, Debug};
@@ -9,8 +10,11 @@ use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
 
 mod lock;
+pub mod mutex;
 
 use lock::{Key, Lock};
+
+pub use mutex::Mutex;
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 
@@ -49,16 +53,5 @@ impl ThreadKey {
 	/// this `ThreadKey`.
 	pub fn unlock(key: Self) {
 		drop(key);
-	}
-
-	/// Unlocks the `ThreadKey` without consuming it.
-	///
-	/// # Safety
-	///
-	/// This should only be called if the `ThreadKey` to the lock has been
-	/// "lost". That means the program no longer has a reference to the key,
-	/// but it has not been dropped.
-	pub unsafe fn force_unlock() {
-		KEY.get_or_default().force_unlock();
 	}
 }
