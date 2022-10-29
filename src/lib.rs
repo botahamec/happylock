@@ -17,6 +17,7 @@ use lock::{Key, Lock};
 use mutex::RawSpin;
 
 pub use mutex::{Mutex, MutexGuard};
+/// A spinning mutex
 pub type SpinLock<T> = Mutex<RawSpin, T>;
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
