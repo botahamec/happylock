@@ -38,6 +38,11 @@ impl Lock {
 		}
 	}
 
+	/// Checks whether this `Lock` is currently locked.
+	pub fn is_locked(&self) -> bool {
+		self.is_locked.load(Ordering::Relaxed)
+	}
+
 	/// Attempt to lock the `Lock`.
 	///
 	/// If the lock is already locked, then this'll return false. If it is
@@ -56,7 +61,7 @@ impl Lock {
 	///
 	/// This should only be called if the key to the lock has been "lost". That
 	/// means the program no longer has a reference to the key.
-	unsafe fn force_unlock(&self) {
+	pub unsafe fn force_unlock(&self) {
 		self.is_locked.store(false, Ordering::Release);
 	}
 

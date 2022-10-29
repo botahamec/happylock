@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
+#![allow(clippy::declare_interior_mutable_const)]
 
 use std::any::type_name;
 use std::fmt::{self, Debug};
@@ -10,11 +11,13 @@ use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
 
 mod lock;
-pub mod mutex;
+mod mutex;
 
 use lock::{Key, Lock};
+use mutex::RawSpin;
 
-pub use mutex::Mutex;
+pub use mutex::{Mutex, MutexGuard};
+pub type SpinLock<T> = Mutex<RawSpin, T>;
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 

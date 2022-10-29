@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 
+use crate::lock::Lock;
 use crate::ThreadKey;
 
 /// Implements a raw C-like mutex.
@@ -29,6 +30,38 @@ pub unsafe trait RawMutex {
 	///
 	/// The lock must be acquired in the current context.
 	unsafe fn unlock(&self);
+}
+
+/// A raw mutex which just spins
+pub struct RawSpin {
+	lock: Lock,
+}
+
+unsafe impl RawMutex for RawSpin {
+	const INIT: Self = Self { lock: Lock::new() };
+
+	fn lock(&self) {
+		loop {
+			std::hint::spin_loop();
+
+			if let Some(key) = self.lock.try_lock() {
+				std::mem::forget(key);
+				return;
+			}
+		}
+	}
+
+	fn try_lock(&self) -> bool {
+		self.lock.try_lock().is_some()
+	}
+
+	fn is_locked(&self) -> bool {
+		self.lock.is_locked()
+	}
+
+	unsafe fn unlock(&self) {
+		self.lock.force_unlock();
+	}
 }
 
 /// A mutual exclusion primitive useful for protecting shared data, which
