@@ -4,6 +4,9 @@ use std::ops::{Deref, DerefMut};
 use crate::lock::Lock;
 use crate::ThreadKey;
 
+/// A spinning mutex
+pub type SpinLock<T> = Mutex<RawSpin, T>;
+
 /// Implements a raw C-like mutex.
 ///
 /// # Safety

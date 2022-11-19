@@ -1,8 +1,8 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{
-	mutex::{MutexRef, RawMutex},
-	Mutex, ThreadKey,
+	mutex::{Mutex, MutexRef, RawMutex},
+	ThreadKey,
 };
 
 mod sealed {

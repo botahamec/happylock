@@ -12,15 +12,11 @@ use thread_local::ThreadLocal;
 
 mod guard;
 mod lock;
-mod mutex;
+pub mod mutex;
 
 use lock::{Key, Lock};
-use mutex::RawSpin;
 
 pub use guard::{LockGuard, Lockable};
-pub use mutex::{Mutex, MutexGuard};
-/// A spinning mutex
-pub type SpinLock<T> = Mutex<RawSpin, T>;
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 
