@@ -73,6 +73,12 @@ unsafe impl RawMutex for RawSpin {
 /// returned from [`lock`] and [`try_lock`], which guarantees that the data is
 /// only ever accessed when the mutex is locked.
 ///
+/// Locking the mutex on a thread that already locked it is impossible, due to
+/// the requirement of the [`ThreadKey`]. Therefore, this will never deadlock.
+/// When the [`MutexGuard`] is dropped, the [`ThreadKey`] can be reobtained by
+/// calling [`ThreadKey::lock`]. You can also get it by calling
+/// [`Mutex::unlock`].
+///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
 pub struct Mutex<R, T: ?Sized> {
@@ -172,12 +178,6 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 	/// Upon returning, the thread is the only thread with a lock on the
 	/// `Mutex`. A [`MutexGuard`] is returned to allow a scoped unlock of this
 	/// `Mutex`. When the guard is dropped, this `Mutex` will unlock.
-	///
-	/// Locking the mutex on a thread that already locked it is impossible, due
-	/// to the requirement of the [`ThreadKey`]. Therefore, this will never
-	/// deadlock. When the [`MutexGuard`] is dropped, the [`ThreadKey`] can be
-	/// reobtained by calling [`ThreadKey::lock`]. You can also get it
-	/// by calling [`Mutex::unlock`].
 	///
 	/// # Examples
 	///
