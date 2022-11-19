@@ -17,7 +17,7 @@ pub struct Key<'a> {
 
 impl<'a> Key<'a> {
 	/// Create a key to a lock.
-	const fn new(lock: &'a Lock) -> Self {
+	const unsafe fn new(lock: &'a Lock) -> Self {
 		Self { lock }
 	}
 }
@@ -52,7 +52,8 @@ impl Lock {
 	/// This is not a fair lock. It is not recommended to call this function
 	/// repeatedly in a loop.
 	pub fn try_lock(&self) -> Option<Key> {
-		(!self.is_locked.fetch_or(true, Ordering::Acquire)).then_some(Key::new(self))
+		// safety: we just acquired the lock
+		(!self.is_locked.fetch_or(true, Ordering::Acquire)).then_some(unsafe { Key::new(self) })
 	}
 
 	/// Forcibly unlocks the `Lock`.

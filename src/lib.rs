@@ -10,12 +10,14 @@ use std::marker::PhantomData;
 use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
 
+mod guard;
 mod lock;
 mod mutex;
 
 use lock::{Key, Lock};
 use mutex::RawSpin;
 
+pub use guard::{LockGuard, Lockable};
 pub use mutex::{Mutex, MutexGuard};
 /// A spinning mutex
 pub type SpinLock<T> = Mutex<RawSpin, T>;
