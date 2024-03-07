@@ -12,11 +12,14 @@ use thread_local::ThreadLocal;
 
 mod guard;
 mod lock;
+mod lockable;
 pub mod mutex;
 
 use lock::{Key, Lock};
 
-pub use guard::{LockGuard, Lockable};
+pub use guard::LockGuard;
+pub use lockable::Lockable;
+pub use mutex::Mutex;
 
 static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
 
