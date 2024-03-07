@@ -53,7 +53,7 @@ impl Lock {
 	/// repeatedly in a loop.
 	pub fn try_lock(&self) -> Option<Key> {
 		// safety: we just acquired the lock
-		(!self.is_locked.fetch_or(true, Ordering::Acquire)).then_some(unsafe { Key::new(self) })
+		(!self.is_locked.swap(true, Ordering::Acquire)).then_some(unsafe { Key::new(self) })
 	}
 
 	/// Forcibly unlocks the `Lock`.

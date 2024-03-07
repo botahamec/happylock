@@ -9,7 +9,8 @@ mod sealed {
 	#[allow(clippy::wildcard_imports)]
 	use super::*;
 	pub trait Sealed {}
-	impl<R: RawMutex, T> Sealed for Mutex<R, T> {}
+	impl<'a, T, R: RawMutex + 'a> Sealed for Mutex<T, R> {}
+	impl<'a, T, R: RawMutex + 'a> Sealed for &Mutex<T, R> {}
 	impl<'a, A: Lockable<'a>, B: Lockable<'a>> Sealed for (A, B) {}
 }
 
@@ -41,8 +42,24 @@ pub trait Lockable<'a>: sealed::Sealed {
 	fn unlock(guard: Self::Output);
 }
 
-impl<'a, R: RawMutex + 'a, T: 'a> Lockable<'a> for Mutex<R, T> {
-	type Output = MutexRef<'a, R, T>;
+impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
+	type Output = MutexRef<'a, T, R>;
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		self.lock_ref()
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		self.try_lock_ref()
+	}
+
+	fn unlock(guard: Self::Output) {
+		drop(guard);
+	}
+}
+
+impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for &Mutex<T, R> {
+	type Output = MutexRef<'a, T, R>;
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		self.lock_ref()

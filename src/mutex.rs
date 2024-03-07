@@ -84,15 +84,15 @@ unsafe impl RawMutex for RawSpin {
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct Mutex<R, T: ?Sized> {
+pub struct Mutex<T: ?Sized, R = RawSpin> {
 	raw: R,
 	value: UnsafeCell<T>,
 }
 
 /// A reference to a mutex that unlocks it when dropped
-pub struct MutexRef<'a, R: RawMutex, T: ?Sized + 'a>(&'a Mutex<R, T>);
+pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex = RawSpin>(&'a Mutex<T, R>);
 
-impl<'a, R: RawMutex, T: ?Sized + 'a> Drop for MutexRef<'a, R, T> {
+impl<'a, T: ?Sized + 'a, R: RawMutex> Drop for MutexRef<'a, T, R> {
 	fn drop(&mut self) {
 		// safety: this guard is being destroyed, so the data cannot be
 		//         accessed without locking again
@@ -100,7 +100,7 @@ impl<'a, R: RawMutex, T: ?Sized + 'a> Drop for MutexRef<'a, R, T> {
 	}
 }
 
-impl<'a, R: RawMutex, T: ?Sized + 'a> Deref for MutexRef<'a, R, T> {
+impl<'a, T: ?Sized + 'a, R: RawMutex> Deref for MutexRef<'a, T, R> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -111,7 +111,7 @@ impl<'a, R: RawMutex, T: ?Sized + 'a> Deref for MutexRef<'a, R, T> {
 	}
 }
 
-impl<'a, R: RawMutex, T: ?Sized + 'a> DerefMut for MutexRef<'a, R, T> {
+impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexRef<'a, T, R> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		// safety: this is the only type that can use `value`, and we have a
 		//         mutable reference to this type, so there cannot be any other
@@ -127,12 +127,12 @@ impl<'a, R: RawMutex, T: ?Sized + 'a> DerefMut for MutexRef<'a, R, T> {
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct MutexGuard<'a, R: RawMutex, T: ?Sized + 'a> {
-	mutex: MutexRef<'a, R, T>,
+pub struct MutexGuard<'a, T: ?Sized + 'a, R: RawMutex = RawSpin> {
+	mutex: MutexRef<'a, T, R>,
 	thread_key: ThreadKey,
 }
 
-impl<'a, R: RawMutex, T: ?Sized + 'a> Deref for MutexGuard<'a, R, T> {
+impl<'a, T: ?Sized + 'a, R: RawMutex> Deref for MutexGuard<'a, T, R> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -140,16 +140,16 @@ impl<'a, R: RawMutex, T: ?Sized + 'a> Deref for MutexGuard<'a, R, T> {
 	}
 }
 
-impl<'a, R: RawMutex, T: ?Sized + 'a> DerefMut for MutexGuard<'a, R, T> {
+impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexGuard<'a, T, R> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.mutex
 	}
 }
 
-impl<'a, R: RawMutex, T: ?Sized + 'a> MutexGuard<'a, R, T> {
+impl<'a, T: ?Sized + 'a, R: RawMutex> MutexGuard<'a, T, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
-	const unsafe fn new(mutex: &'a Mutex<R, T>, thread_key: ThreadKey) -> Self {
+	const unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: ThreadKey) -> Self {
 		Self {
 			mutex: MutexRef(mutex),
 			thread_key,
@@ -157,7 +157,7 @@ impl<'a, R: RawMutex, T: ?Sized + 'a> MutexGuard<'a, R, T> {
 	}
 }
 
-impl<R: RawMutex, T> Mutex<R, T> {
+impl<T, R: RawMutex> Mutex<T, R> {
 	/// Create a new unlocked `Mutex`.
 	///
 	/// # Examples
@@ -175,7 +175,7 @@ impl<R: RawMutex, T> Mutex<R, T> {
 	}
 }
 
-impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
+impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// Block the thread until this mutex can be locked, and lock it.
 	///
 	/// Upon returning, the thread is the only thread with a lock on the
@@ -199,7 +199,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn lock(&self, key: ThreadKey) -> MutexGuard<'_, R, T> {
+	pub fn lock(&self, key: ThreadKey) -> MutexGuard<'_, T, R> {
 		self.raw.lock();
 
 		// safety: we just locked the mutex
@@ -209,7 +209,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 	/// Lock without a [`ThreadKey`]. You must own the [`ThreadKey`] as long as
 	/// the [`MutexRef`] is alive. This may cause deadlock if called multiple
 	/// times without unlocking first.
-	pub(crate) unsafe fn lock_ref(&self) -> MutexRef<'_, R, T> {
+	pub(crate) unsafe fn lock_ref(&self) -> MutexRef<'_, T, R> {
 		self.raw.lock();
 
 		MutexRef(self)
@@ -243,7 +243,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn try_lock(&self, key: ThreadKey) -> Result<MutexGuard<'_, R, T>, ThreadKey> {
+	pub fn try_lock(&self, key: ThreadKey) -> Result<MutexGuard<'_, T, R>, ThreadKey> {
 		if self.raw.try_lock() {
 			// safety: we just locked the mutex
 			Ok(unsafe { MutexGuard::new(self, key) })
@@ -254,7 +254,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 
 	/// Lock without a [`ThreadKey`]. It is undefined behavior to do this without
 	/// owning the [`ThreadKey`].
-	pub(crate) unsafe fn try_lock_ref(&self) -> Option<MutexRef<'_, R, T>> {
+	pub(crate) unsafe fn try_lock_ref(&self) -> Option<MutexRef<'_, T, R>> {
 		self.raw.try_lock().then_some(MutexRef(self))
 	}
 
@@ -290,10 +290,10 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 	/// ```
 	#[allow(clippy::missing_const_for_fn)]
 	#[must_use]
-	pub fn unlock(guard: MutexGuard<'_, R, T>) -> ThreadKey {
+	pub fn unlock(guard: MutexGuard<'_, T, R>) -> ThreadKey {
 		guard.thread_key
 	}
 }
 
-unsafe impl<R: Send, T: ?Sized + Send> Send for Mutex<R, T> {}
-unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}
+unsafe impl<R: Send, T: ?Sized + Send> Send for Mutex<T, R> {}
+unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<T, R> {}
