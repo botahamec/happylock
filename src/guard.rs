@@ -17,7 +17,6 @@ mod sealed {
 	impl<T: Sealed> Sealed for &mut T {}
 	impl<'a, A: Lockable<'a>, B: Lockable<'a>> Sealed for (A, B) {}
 	impl<'a, T: Lockable<'a>, const N: usize> Sealed for [T; N] {}
-	impl<'a, T: Lockable<'a>> Sealed for &[T] {}
 }
 
 pub trait Lockable<'a>: sealed::Sealed {
