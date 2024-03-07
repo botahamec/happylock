@@ -10,8 +10,11 @@ mod sealed {
 	use super::*;
 	pub trait Sealed {}
 	impl<'a, T, R: RawMutex + 'a> Sealed for Mutex<T, R> {}
-	impl<'a, T, R: RawMutex + 'a> Sealed for &Mutex<T, R> {}
+	impl<T: Sealed> Sealed for &T {}
+	impl<T: Sealed> Sealed for &mut T {}
 	impl<'a, A: Lockable<'a>, B: Lockable<'a>> Sealed for (A, B) {}
+	impl<'a, T: Lockable<'a>, const N: usize> Sealed for [T; N] {}
+	impl<'a, T: Lockable<'a>> Sealed for &[T] {}
 }
 
 pub trait Lockable<'a>: sealed::Sealed {
@@ -42,23 +45,41 @@ pub trait Lockable<'a>: sealed::Sealed {
 	fn unlock(guard: Self::Output);
 }
 
-impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
-	type Output = MutexRef<'a, T, R>;
+impl<'a, T: Lockable<'a>> Lockable<'a> for &T {
+	type Output = T::Output;
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		self.lock_ref()
+		(*self).lock()
 	}
 
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.try_lock_ref()
+		(*self).try_lock()
 	}
 
+	#[allow(clippy::semicolon_if_nothing_returned)]
 	fn unlock(guard: Self::Output) {
-		drop(guard);
+		T::unlock(guard)
 	}
 }
 
-impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for &Mutex<T, R> {
+impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
+	type Output = T::Output;
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		(**self).lock()
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		(**self).try_lock()
+	}
+
+	#[allow(clippy::semicolon_if_nothing_returned)]
+	fn unlock(guard: Self::Output) {
+		T::unlock(guard)
+	}
+}
+
+impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	type Output = MutexRef<'a, T, R>;
 
 	unsafe fn lock(&'a self) -> Self::Output {
