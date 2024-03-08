@@ -12,9 +12,6 @@ pub type SpinLock<T> = Mutex<T, spin::Mutex<()>>;
 /// A parking lot mutex
 pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 
-/// A standard library mutex
-pub type StdMutex<T> = Mutex<T, antidote::Mutex<()>>;
-
 /// A mutual exclusion primitive useful for protecting shared data, which
 /// cannot deadlock.
 ///
