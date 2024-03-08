@@ -78,6 +78,8 @@ Are the ergonomics really correct here? This is completely untreaded territory. 
 
 There might be some promise in trying to prevent circular wait. There could be a special type that only allows the locking mutexes in a specific order. This would still require a thread key so that nobody tries to unlock multiple lock sequences at the same time. But this could improve performance, since we wouldn't need to worry about making sure the lock operations are atomic.
 
+It would be nice to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. 
+
 Currently, the mutex is implemented using a spinlock. We need to not do that. We could use parking lot, or mutexes from the operating system.
 
 A more fair system for getting sets locks would help, but I have no clue what that looks like.
