@@ -1,8 +1,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 
-use crate::lock::Lock;
-use crate::ThreadKey;
+use crate::key::{AtomicLock, Keyable};
 
 /// A spinning mutex
 pub type SpinLock<T> = Mutex<T, RawSpin>;
@@ -37,11 +36,13 @@ pub unsafe trait RawMutex {
 
 /// A raw mutex which just spins
 pub struct RawSpin {
-	lock: Lock,
+	lock: AtomicLock,
 }
 
 unsafe impl RawMutex for RawSpin {
-	const INIT: Self = Self { lock: Lock::new() };
+	const INIT: Self = Self {
+		lock: AtomicLock::new(),
+	};
 
 	fn lock(&self) {
 		loop {
@@ -124,12 +125,12 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexRef<'a, T, R> {
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct MutexGuard<'a, T: ?Sized + 'a, R: RawMutex = RawSpin> {
+pub struct MutexGuard<'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex = RawSpin> {
 	mutex: MutexRef<'a, T, R>,
-	_thread_key: &'a mut ThreadKey,
+	_thread_key: Key,
 }
 
-impl<'a, T: ?Sized + 'a, R: RawMutex> Deref for MutexGuard<'a, T, R> {
+impl<'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> Deref for MutexGuard<'a, T, Key, R> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -137,16 +138,16 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> Deref for MutexGuard<'a, T, R> {
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexGuard<'a, T, R> {
+impl<'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> DerefMut for MutexGuard<'a, T, Key, R> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.mutex
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawMutex> MutexGuard<'a, T, R> {
+impl<'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> MutexGuard<'a, T, Key, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
-	unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: &'a mut ThreadKey) -> Self {
+	const unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: Key) -> Self {
 		Self {
 			mutex: MutexRef(mutex),
 			_thread_key: thread_key,
@@ -196,7 +197,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn lock<'s, 'a: 's>(&'s self, key: &'a mut ThreadKey) -> MutexGuard<'_, T, R> {
+	pub fn lock<'s, 'a: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'_, T, Key, R> {
 		self.raw.lock();
 
 		// safety: we just locked the mutex
@@ -240,7 +241,10 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn try_lock<'s, 'a: 's>(&'s self, key: &'a mut ThreadKey) -> Option<MutexGuard<'_, T, R>> {
+	pub fn try_lock<'s, 'a: 's, Key: Keyable>(
+		&'s self,
+		key: Key,
+	) -> Option<MutexGuard<'_, T, Key, R>> {
 		if self.raw.try_lock() {
 			// safety: we just locked the mutex
 			Some(unsafe { MutexGuard::new(self, key) })
@@ -281,7 +285,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = Mutex::unlock(guard);
 	/// ```
 	#[allow(clippy::missing_const_for_fn)]
-	pub fn unlock(guard: MutexGuard<'_, T, R>) {
+	pub fn unlock(guard: MutexGuard<'_, T, impl Keyable, R>) {
 		drop(guard);
 	}
 }

@@ -5,7 +5,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
 
-static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
+use self::sealed::Sealed;
+
+mod sealed {
+	use super::ThreadKey;
+	pub trait Sealed {}
+	impl Sealed for ThreadKey {}
+	impl Sealed for &mut ThreadKey {}
+}
+
+static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 
 /// The key for the current thread.
 ///
@@ -15,14 +24,25 @@ pub type ThreadKey = Key<'static>;
 
 /// A dumb lock that's just a wrapper for an [`AtomicBool`].
 #[derive(Debug, Default)]
-pub struct Lock {
+pub struct AtomicLock {
 	is_locked: AtomicBool,
 }
 
 pub struct Key<'a> {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
-	lock: &'a Lock,
+	lock: &'a AtomicLock,
 }
+
+/// Allows the type to be used as a key for a lock
+///
+/// # Safety
+///
+/// Only one value which implements this trait may be allowed to exist at a
+/// time. Creating a new `Keyable` value requires making any other `Keyable`
+/// values invalid.
+pub unsafe trait Keyable: Sealed {}
+unsafe impl Keyable for ThreadKey {}
+unsafe impl Keyable for &mut ThreadKey {}
 
 impl Debug for ThreadKey {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -56,8 +76,8 @@ impl ThreadKey {
 	}
 }
 
-impl Lock {
-	/// Create a new unlocked `Lock`.
+impl AtomicLock {
+	/// Create a new unlocked `AtomicLock`.
 	#[must_use]
 	pub const fn new() -> Self {
 		Self {
@@ -70,7 +90,7 @@ impl Lock {
 		self.is_locked.load(Ordering::Relaxed)
 	}
 
-	/// Attempt to lock the `Lock`.
+	/// Attempt to lock the `AtomicLock`.
 	///
 	/// If the lock is already locked, then this'll return false. If it is
 	/// unlocked, it'll return true. If the lock is currently unlocked, then it
@@ -86,7 +106,7 @@ impl Lock {
 		})
 	}
 
-	/// Forcibly unlocks the `Lock`.
+	/// Forcibly unlocks the `AtomicLock`.
 	///
 	/// # Safety
 	///

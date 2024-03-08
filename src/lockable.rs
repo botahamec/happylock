@@ -31,6 +31,8 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	/// * Use this without ownership or mutable access to the [`ThreadKey`],
 	/// which should last as long as the return value is alive.
 	/// * Call this on multiple locks without unlocking first.
+	///
+	/// [`ThreadKey`]: `crate::key::ThreadKey`
 	unsafe fn lock(&'a self) -> Self::Output;
 
 	/// Attempt to lock without blocking.
@@ -42,6 +44,8 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	/// It is undefined behavior to use this without ownership or mutable
 	/// access to the [`ThreadKey`], which should last as long as the return
 	/// value is alive.
+	///
+	/// [`ThreadKey`]: `crate::key::ThreadKey`
 	unsafe fn try_lock(&'a self) -> Option<Self::Output>;
 
 	/// Release the lock

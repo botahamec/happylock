@@ -39,7 +39,7 @@ let data = data.lock(&mut key);
 println!("{}", *data);
 ```
 
-Unlocking a mutex requires a mutable reference to `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. This means that only one thing can be locked at a time.
+Unlocking a mutex requires a `ThreadKey` or a mutable reference to `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. This means that only one thing can be locked at a time.
 
 To lock multiple mutexes at a time, create a `LockGuard`.
 
@@ -66,7 +66,7 @@ println!("{}", *data.1);
 
 ## Performance
 
-The `ThreadKey` is a mostly-zero cost abstraction. It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::lock()`, because the function has to ensure that the key hasn't already been taken. Dropping the key will also have a small cost.
+The `ThreadKey` is a mostly-zero cost abstraction. It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::lock()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
 
 The real performance cost comes from the fact that the sets of multiple locks must be atomic. The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
 
@@ -80,10 +80,10 @@ There might be some promise in trying to prevent circular wait. There could be a
 
 Currently, the mutex is implemented using a spinlock. We need to not do that. We could use parking lot, or mutexes from the operating system.
 
-A more fair system for getting sets locks would help, but I have no clue what that will look like.
+A more fair system for getting sets locks would help, but I have no clue what that looks like.
 
 A read-write lock would be very useful here, and maybe condvars?
 
 Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
 
-More types should be lockable using a `LockGuard`.
+More types might be lockable using a `LockGuard`.
