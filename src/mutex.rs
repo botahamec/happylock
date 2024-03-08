@@ -121,9 +121,42 @@ impl<T, R: RawMutex> Mutex<T, R> {
 			value: UnsafeCell::new(value),
 		}
 	}
+
+	/// Consumes this mutex, returning the underlying data.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::Mutex;
+	///
+	/// let mutex = Mutex::new(0);
+	/// assert_eq!(mutex.into_inner(), 0);
+	/// ````
+	pub fn into_inner(self) -> T {
+		self.value.into_inner()
+	}
 }
 
 impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
+	/// Returns a mutable reference to the underlying data.
+	///
+	/// Since this call borrows `Mutex` mutably, no actual locking is taking
+	/// place. The mutable borrow statically guarantees that no locks exist.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{ThreadKey, Mutex};
+	///
+	/// let key = ThreadKey::lock();
+	/// let mut mutex = Mutex::new(0);
+	/// *mutex.get_mut() = 10;
+	/// assert_eq!(*mutex.lock(key), 10);
+	/// ````
+	pub fn get_mut(&mut self) -> &mut T {
+		self.value.get_mut()
+	}
+
 	/// Block the thread until this mutex can be locked, and lock it.
 	///
 	/// Upon returning, the thread is the only thread with a lock on the
@@ -147,20 +180,17 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn lock<'s, 'a: 's, 'k: 'a, Key: Keyable>(
-		&'s self,
-		key: Key,
-	) -> MutexGuard<'_, 'k, T, Key, R> {
+	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'_, 'k, T, Key, R> {
 		self.raw.lock();
 
 		// safety: we just locked the mutex
 		unsafe { MutexGuard::new(self, key) }
 	}
 
-	/// Lock without a [`ThreadKey`]. You must mutually own the [`ThreadKey`] as
-	/// long as the [`MutexRef`] is alive. This may cause deadlock if called
-	/// multiple times without unlocking first.
-	pub(crate) unsafe fn lock_ref(&self) -> MutexRef<'_, T, R> {
+	/// Lock without a [`ThreadKey`]. You must exclusively own the
+	/// [`ThreadKey`] as long as the [`MutexRef`] is alive. This may cause
+	/// deadlock if called multiple times without unlocking first.
+	pub(crate) unsafe fn lock_no_key(&self) -> MutexRef<'_, T, R> {
 		self.raw.lock();
 
 		MutexRef(self)
@@ -179,13 +209,13 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// use happylock::{Mutex, ThreadKey};
 	///
 	/// let mutex = Arc::new(Mutex::new(0));
-	/// let c_mutex = Arc::clone(mutex);
+	/// let c_mutex = Arc::clone(&mutex);
 	///
 	/// thread::spawn(move || {
-	///     let key = ThradKey::lock().unwrap();
-	///     let mut lock = c_mutex.try_lock();
-	///     if let Ok(lock) = lock {
-	///         **mutex = 10;
+	///     let key = ThreadKey::lock().unwrap();
+	///     let mut lock = c_mutex.try_lock(key);
+	///     if let Some(mut lock) = lock {
+	///         *lock = 10;
 	///     } else {
 	///         println!("try_lock failed");
 	///     }
@@ -208,7 +238,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 
 	/// Lock without a [`ThreadKey`]. It is undefined behavior to do this without
 	/// owning the [`ThreadKey`].
-	pub(crate) unsafe fn try_lock_ref(&self) -> Option<MutexRef<'_, T, R>> {
+	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<MutexRef<'_, T, R>> {
 		self.raw.try_lock().then_some(MutexRef(self))
 	}
 
@@ -232,7 +262,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// let mutex = Mutex::new(0);
 	///
-	/// let guard = mutex.lock(key);
+	/// let mut guard = mutex.lock(key);
 	/// *guard += 20;
 	///
 	/// let key = Mutex::unlock(guard);

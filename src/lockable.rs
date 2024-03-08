@@ -92,11 +92,11 @@ unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	type Output = MutexRef<'a, T, R>;
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		self.lock_ref()
+		self.lock_no_key()
 	}
 
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.try_lock_ref()
+		self.try_lock_no_key()
 	}
 
 	fn unlock(guard: Self::Output) {
