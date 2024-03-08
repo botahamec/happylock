@@ -10,3 +10,7 @@ license = "Unlicense"
 [dependencies]
 thread_local = "1"
 once_cell = "1"
+antidote = "1"
+lock_api = "0.4"
+parking_lot = "0.12"
+spin = "0.9"

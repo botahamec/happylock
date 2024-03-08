@@ -1,11 +1,10 @@
 use std::thread;
 
-use happylock::mutex::{Mutex, SpinLock};
-use happylock::{LockGuard, ThreadKey};
+use happylock::{LockGuard, Mutex, ThreadKey};
 
 const N: usize = 10;
 
-static DATA: [SpinLock<usize>; 6] = [
+static DATA: [Mutex<usize>; 6] = [
 	Mutex::new(0),
 	Mutex::new(1),
 	Mutex::new(2),
@@ -14,7 +13,7 @@ static DATA: [SpinLock<usize>; 6] = [
 	Mutex::new(5),
 ];
 
-static SEED: SpinLock<u32> = Mutex::new(42);
+static SEED: Mutex<u32> = Mutex::new(42);
 
 fn random(key: &mut ThreadKey) -> usize {
 	let mut seed = SEED.lock(key);

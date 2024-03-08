@@ -11,4 +11,5 @@ pub mod mutex;
 pub use guard::LockGuard;
 pub use key::{Key, ThreadKey};
 pub use lockable::Lockable;
-pub use mutex::Mutex;
+pub use mutex::ParkingMutex as Mutex;
+pub use mutex::SpinLock;

@@ -1,12 +1,11 @@
 use std::thread;
 
-use happylock::mutex::{Mutex, SpinLock};
-use happylock::{LockGuard, ThreadKey};
+use happylock::{LockGuard, Mutex, ThreadKey};
 
 const N: usize = 10;
 
-static DATA_1: SpinLock<i32> = Mutex::new(0);
-static DATA_2: SpinLock<String> = Mutex::new(String::new());
+static DATA_1: Mutex<i32> = Mutex::new(0);
+static DATA_2: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
 	for _ in 0..N {

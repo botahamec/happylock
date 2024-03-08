@@ -1,10 +1,12 @@
 use std::mem::MaybeUninit;
 
-use crate::mutex::{Mutex, MutexRef, RawMutex};
+use crate::mutex::{Mutex, MutexRef};
+use lock_api::RawMutex;
 
 mod sealed {
 	#[allow(clippy::wildcard_imports)]
 	use super::*;
+
 	pub trait Sealed {}
 	impl<'a, T, R: RawMutex + 'a> Sealed for Mutex<T, R> {}
 	impl<T: Sealed> Sealed for &T {}

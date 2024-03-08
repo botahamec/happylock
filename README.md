@@ -80,12 +80,12 @@ There might be some promise in trying to prevent circular wait. There could be a
 
 It would be nice to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. 
 
-Currently, the mutex is implemented using a spinlock. We need to not do that. We could use parking lot, or mutexes from the operating system.
+Currently, the mutex is implemented using a spinlock. We need to not do that. We could use parking lot, or the standard library.
 
 A more fair system for getting sets locks would help, but I have no clue what that looks like.
 
-A read-write lock would be very useful here, and maybe condvars?
+A read-write lock would be very useful here, and maybe other primitives such as condvars and once?
 
-Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
+Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing. For now, that can be implemented using the `poison` crate.
 
 More types might be lockable using a `LockGuard`.

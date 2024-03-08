@@ -1,72 +1,18 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 
-use crate::key::{AtomicLock, Keyable};
+use lock_api::RawMutex;
+
+use crate::key::Keyable;
 
 /// A spinning mutex
-pub type SpinLock<T> = Mutex<T, RawSpin>;
+pub type SpinLock<T> = Mutex<T, spin::Mutex<()>>;
 
-/// Implements a raw C-like mutex.
-///
-/// # Safety
-///
-/// It cannot be possible to lock the mutex when it is already locked.
-pub unsafe trait RawMutex {
-	/// The initial value for an unlocked mutex
-	const INIT: Self;
+/// A parking lot mutex
+pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 
-	/// Lock the mutex, blocking until the lock is acquired
-	fn lock(&self);
-
-	/// Attempt to lock the mutex without blocking.
-	///
-	/// Returns `true` if successful, `false` otherwise.
-	fn try_lock(&self) -> bool;
-
-	/// Checks whether the mutex is currently locked or not
-	fn is_locked(&self) -> bool;
-
-	/// Unlock the mutex.
-	///
-	/// # Safety
-	///
-	/// The lock must be acquired in the current context.
-	unsafe fn unlock(&self);
-}
-
-/// A raw mutex which just spins
-pub struct RawSpin {
-	lock: AtomicLock,
-}
-
-unsafe impl RawMutex for RawSpin {
-	const INIT: Self = Self {
-		lock: AtomicLock::new(),
-	};
-
-	fn lock(&self) {
-		loop {
-			std::hint::spin_loop();
-
-			if let Some(key) = self.lock.try_lock() {
-				std::mem::forget(key);
-				return;
-			}
-		}
-	}
-
-	fn try_lock(&self) -> bool {
-		self.lock.try_lock().is_some()
-	}
-
-	fn is_locked(&self) -> bool {
-		self.lock.is_locked()
-	}
-
-	unsafe fn unlock(&self) {
-		self.lock.force_unlock();
-	}
-}
+/// A standard library mutex
+pub type StdMutex<T> = Mutex<T, antidote::Mutex<()>>;
 
 /// A mutual exclusion primitive useful for protecting shared data, which
 /// cannot deadlock.
@@ -82,7 +28,7 @@ unsafe impl RawMutex for RawSpin {
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct Mutex<T: ?Sized, R> {
+pub struct Mutex<T: ?Sized, R: RawMutex> {
 	raw: R,
 	value: UnsafeCell<T>,
 }
@@ -125,7 +71,7 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexRef<'a, T, R> {
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct MutexGuard<'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex = RawSpin> {
+pub struct MutexGuard<'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> {
 	mutex: MutexRef<'a, T, R>,
 	_thread_key: Key,
 }
@@ -290,5 +236,5 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	}
 }
 
-unsafe impl<R: Send, T: ?Sized + Send> Send for Mutex<T, R> {}
+unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<T, R> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<T, R> {}

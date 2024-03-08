@@ -22,12 +22,6 @@ static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 /// [`ThreadKey::lock`]. If the `ThreadKey` is dropped, it can be reobtained.
 pub type ThreadKey = Key<'static>;
 
-/// A dumb lock that's just a wrapper for an [`AtomicBool`].
-#[derive(Debug, Default)]
-pub struct AtomicLock {
-	is_locked: AtomicBool,
-}
-
 pub struct Key<'a> {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
 	lock: &'a AtomicLock,
@@ -76,20 +70,13 @@ impl ThreadKey {
 	}
 }
 
+/// A dumb lock that's just a wrapper for an [`AtomicBool`].
+#[derive(Debug, Default)]
+struct AtomicLock {
+	is_locked: AtomicBool,
+}
+
 impl AtomicLock {
-	/// Create a new unlocked `AtomicLock`.
-	#[must_use]
-	pub const fn new() -> Self {
-		Self {
-			is_locked: AtomicBool::new(false),
-		}
-	}
-
-	/// Checks whether this `Lock` is currently locked.
-	pub fn is_locked(&self) -> bool {
-		self.is_locked.load(Ordering::Relaxed)
-	}
-
 	/// Attempt to lock the `AtomicLock`.
 	///
 	/// If the lock is already locked, then this'll return false. If it is
