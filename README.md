@@ -19,7 +19,7 @@ This library prevents #4, by requiring that all of the resources that a thread n
 ## Example
 
 ```rust
-let data = Mutex::new(0);
+let data: SpinLock<i32> = Mutex::new(0);
 
 for _ in 0..N {
 	thread::spawn(move || {
