@@ -27,7 +27,7 @@ for _ in 0..N {
 		let key = ThreadKey::lock().unwrap();
 
 		// unlocking a mutex requires a ThreadKey
-		let mut data = data.lock(key);
+		let mut data = data.lock(&mut key);
 		*data += 1;
 
 		// the key is unlocked at the end of the scope
@@ -35,7 +35,7 @@ for _ in 0..N {
 }
 
 let key = ThreadKey::lock().unwrap();
-let data = data.lock(key);
+let data = data.lock(&mut key);
 println!("{}", *data);
 ```
 
@@ -44,14 +44,14 @@ Unlocking a mutex requires a mutable reference to `ThreadKey`. Each thread will 
 To lock multiple mutexes at a time, create a `LockGuard`.
 
 ```rust
-static DATA_1: Mutex<i32> = Mutex::new(0);
-static DATA_2: Mutex<String> = Mutex::new(String::new());
+static DATA_1: SpinLock<i32> = Mutex::new(0);
+static DATA_2: SpinLock<String> = Mutex::new(String::new());
 
 for _ in 0..N {
 	thread::spawn(move || {
 		let key = ThreadKey::lock().unwrap();
 		let data = (&DATA_1, &DATA_2);
-		let mut guard = LockGuard::lock(&data, key);
+		let mut guard = LockGuard::lock(&data, &mut key);
 		*guard.1 = (100 - *guard.0).to_string();
 		*guard.0 += 1;
 	});
@@ -59,7 +59,7 @@ for _ in 0..N {
 
 let key = ThreadKey::lock().unwrap();
 let data = (&DATA_1, &DATA_2);
-let data = LockGuard::lock(&data, key);
+let data = LockGuard::lock(&data, &mut key);
 println!("{}", *data.0);
 println!("{}", *data.1);
 ```
