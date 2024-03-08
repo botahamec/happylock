@@ -5,7 +5,7 @@ use crate::lock::Lock;
 use crate::ThreadKey;
 
 /// A spinning mutex
-pub type SpinLock<T> = Mutex<RawSpin, T>;
+pub type SpinLock<T> = Mutex<T, RawSpin>;
 
 /// Implements a raw C-like mutex.
 ///
@@ -78,19 +78,16 @@ unsafe impl RawMutex for RawSpin {
 ///
 /// Locking the mutex on a thread that already locked it is impossible, due to
 /// the requirement of the [`ThreadKey`]. Therefore, this will never deadlock.
-/// When the [`MutexGuard`] is dropped, the [`ThreadKey`] can be reobtained by
-/// calling [`ThreadKey::lock`]. You can also get it by calling
-/// [`Mutex::unlock`].
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct Mutex<T: ?Sized, R = RawSpin> {
+pub struct Mutex<T: ?Sized, R> {
 	raw: R,
 	value: UnsafeCell<T>,
 }
 
 /// A reference to a mutex that unlocks it when dropped
-pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex = RawSpin>(&'a Mutex<T, R>);
+pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(&'a Mutex<T, R>);
 
 impl<'a, T: ?Sized + 'a, R: RawMutex> Drop for MutexRef<'a, T, R> {
 	fn drop(&mut self) {
@@ -129,7 +126,7 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexRef<'a, T, R> {
 /// [`try_lock`]: `Mutex::try_lock`
 pub struct MutexGuard<'a, T: ?Sized + 'a, R: RawMutex = RawSpin> {
 	mutex: MutexRef<'a, T, R>,
-	thread_key: ThreadKey,
+	_thread_key: &'a mut ThreadKey,
 }
 
 impl<'a, T: ?Sized + 'a, R: RawMutex> Deref for MutexGuard<'a, T, R> {
@@ -149,10 +146,10 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexGuard<'a, T, R> {
 impl<'a, T: ?Sized + 'a, R: RawMutex> MutexGuard<'a, T, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
-	const unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: ThreadKey) -> Self {
+	unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: &'a mut ThreadKey) -> Self {
 		Self {
 			mutex: MutexRef(mutex),
-			thread_key,
+			_thread_key: thread_key,
 		}
 	}
 }
@@ -199,16 +196,16 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn lock(&self, key: ThreadKey) -> MutexGuard<'_, T, R> {
+	pub fn lock<'s, 'a: 's>(&'s self, key: &'a mut ThreadKey) -> MutexGuard<'_, T, R> {
 		self.raw.lock();
 
 		// safety: we just locked the mutex
 		unsafe { MutexGuard::new(self, key) }
 	}
 
-	/// Lock without a [`ThreadKey`]. You must own the [`ThreadKey`] as long as
-	/// the [`MutexRef`] is alive. This may cause deadlock if called multiple
-	/// times without unlocking first.
+	/// Lock without a [`ThreadKey`]. You must mutually own the [`ThreadKey`] as
+	/// long as the [`MutexRef`] is alive. This may cause deadlock if called
+	/// multiple times without unlocking first.
 	pub(crate) unsafe fn lock_ref(&self) -> MutexRef<'_, T, R> {
 		self.raw.lock();
 
@@ -243,12 +240,12 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::lock().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn try_lock(&self, key: ThreadKey) -> Result<MutexGuard<'_, T, R>, ThreadKey> {
+	pub fn try_lock<'s, 'a: 's>(&'s self, key: &'a mut ThreadKey) -> Option<MutexGuard<'_, T, R>> {
 		if self.raw.try_lock() {
 			// safety: we just locked the mutex
-			Ok(unsafe { MutexGuard::new(self, key) })
+			Some(unsafe { MutexGuard::new(self, key) })
 		} else {
-			Err(key)
+			None
 		}
 	}
 
@@ -270,11 +267,6 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 
 	/// Consumes the [`MutexGuard`], and consequently unlocks its `Mutex`.
 	///
-	/// This returns the [`ThreadKey`] that was used to lock the `Mutex`, which
-	/// means that [`ThreadKey::lock`] does not need to be called, and will in
-	/// fact return [`None`] if the [`ThreadKey`] returned by this function is
-	/// not dropped.
-	///
 	/// # Examples
 	///
 	/// ```
@@ -289,9 +281,8 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = Mutex::unlock(guard);
 	/// ```
 	#[allow(clippy::missing_const_for_fn)]
-	#[must_use]
-	pub fn unlock(guard: MutexGuard<'_, T, R>) -> ThreadKey {
-		guard.thread_key
+	pub fn unlock(guard: MutexGuard<'_, T, R>) {
+		drop(guard);
 	}
 }
 

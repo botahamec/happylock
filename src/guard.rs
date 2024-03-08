@@ -5,37 +5,33 @@ use crate::{lockable::Lockable, ThreadKey};
 /// A guard for a generic [`Lockable`] type.
 pub struct LockGuard<'a, L: Lockable<'a>> {
 	guard: L::Output,
-	key: ThreadKey,
+	_key: &'a mut ThreadKey,
 }
 
 impl<'a, L: Lockable<'a>> LockGuard<'a, L> {
 	/// Locks the lockable type and returns a guard that can be used to access
 	/// the underlying data.
-	pub fn lock(lock: &'a L, key: ThreadKey) -> Self {
+	pub fn lock(lock: &'a L, key: &'a mut ThreadKey) -> Self {
 		Self {
 			// safety: we have the thread's key
 			guard: unsafe { lock.lock() },
-			key,
+			_key: key,
 		}
 	}
 
 	/// Attempts to lock the guard without blocking. If successful, this method
 	/// returns a guard that can be used to access the data. Otherwise, the key
 	/// is given back as an error.
-	pub fn try_lock(lock: &'a L, key: ThreadKey) -> Result<Self, ThreadKey> {
+	pub fn try_lock(lock: &'a L, key: &'a mut ThreadKey) -> Option<Self> {
 		// safety: we have the thread's key
-		match unsafe { lock.try_lock() } {
-			Some(guard) => Ok(Self { guard, key }),
-			None => Err(key),
-		}
+		unsafe { lock.try_lock() }.map(|guard| Self { guard, _key: key })
 	}
 
 	/// Unlocks the underlying lockable data type, returning the key that's
 	/// associated with it.
 	#[allow(clippy::missing_const_for_fn)]
-	pub fn unlock(self) -> ThreadKey {
+	pub fn unlock(self) {
 		L::unlock(self.guard);
-		self.key
 	}
 }
 

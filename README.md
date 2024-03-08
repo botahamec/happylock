@@ -39,7 +39,7 @@ let data = data.lock(key);
 println!("{}", *data);
 ```
 
-Unlocking a mutex requires a `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. To get the key back out of a mutex, it must be unlocked. This means that only one thing can be locked at a time.
+Unlocking a mutex requires a mutable reference to `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. This means that only one thing can be locked at a time.
 
 To lock multiple mutexes at a time, create a `LockGuard`.
 

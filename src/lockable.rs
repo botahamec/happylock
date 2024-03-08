@@ -28,8 +28,8 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	/// # Safety
 	///
 	/// It is undefined behavior to:
-	/// * Use this without ownership of the [`ThreadKey`], which should last as
-	/// long as the return value is alive.
+	/// * Use this without ownership or mutable access to the [`ThreadKey`],
+	/// which should last as long as the return value is alive.
 	/// * Call this on multiple locks without unlocking first.
 	unsafe fn lock(&'a self) -> Self::Output;
 
@@ -39,8 +39,9 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	///
 	/// # Safety
 	///
-	/// It is undefined behavior to use this without ownership of the
-	/// [`ThreadKey`], which should last as long as the return value is alive.
+	/// It is undefined behavior to use this without ownership or mutable
+	/// access to the [`ThreadKey`], which should last as long as the return
+	/// value is alive.
 	unsafe fn try_lock(&'a self) -> Option<Self::Output>;
 
 	/// Release the lock

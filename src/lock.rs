@@ -1,4 +1,17 @@
+use std::fmt::{self, Debug};
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use once_cell::sync::Lazy;
+use thread_local::ThreadLocal;
+
+static KEY: Lazy<ThreadLocal<Lock>> = Lazy::new(ThreadLocal::new);
+
+/// The key for the current thread.
+///
+/// Only one of these exist per thread. To get the current thread's key, call
+/// [`ThreadKey::lock`]. If the `ThreadKey` is dropped, it can be reobtained.
+pub type ThreadKey = Key<'static>;
 
 /// A dumb lock that's just a wrapper for an [`AtomicBool`].
 #[derive(Debug, Default)]
@@ -6,26 +19,40 @@ pub struct Lock {
 	is_locked: AtomicBool,
 }
 
-/// A key for a lock.
-///
-/// This key is needed in order to unlock a [`Lock`]. The [`Lock`] is
-/// automatically unlocked if this key is dropped.
-#[derive(Debug)]
 pub struct Key<'a> {
+	phantom: PhantomData<*const ()>, // implement !Send and !Sync
 	lock: &'a Lock,
 }
 
-impl<'a> Key<'a> {
-	/// Create a key to a lock.
-	const unsafe fn new(lock: &'a Lock) -> Self {
-		Self { lock }
+impl Debug for ThreadKey {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "ThreadKey")
 	}
 }
 
 impl<'a> Drop for Key<'a> {
 	fn drop(&mut self) {
-		// safety: this key will soon be destroyed
 		unsafe { self.lock.force_unlock() }
+	}
+}
+
+impl ThreadKey {
+	/// Get the current thread's `ThreadKey`, if it's not already taken.
+	///
+	/// The first time this is called, it will successfully return a
+	/// `ThreadKey`. However, future calls to this function will return
+	/// [`None`], unless the key is dropped or unlocked first.
+	#[must_use]
+	pub fn lock() -> Option<Self> {
+		KEY.get_or_default().try_lock()
+	}
+
+	/// Unlocks the `ThreadKey`.
+	///
+	/// After this method is called, a call to [`ThreadKey::lock`] will return
+	/// this `ThreadKey`.
+	pub fn unlock(key: Self) {
+		drop(key);
 	}
 }
 
@@ -53,7 +80,10 @@ impl Lock {
 	/// repeatedly in a loop.
 	pub fn try_lock(&self) -> Option<Key> {
 		// safety: we just acquired the lock
-		(!self.is_locked.swap(true, Ordering::Acquire)).then_some(unsafe { Key::new(self) })
+		(!self.is_locked.swap(true, Ordering::Acquire)).then_some(Key {
+			phantom: PhantomData,
+			lock: self,
+		})
 	}
 
 	/// Forcibly unlocks the `Lock`.
@@ -64,10 +94,5 @@ impl Lock {
 	/// means the program no longer has a reference to the key.
 	pub unsafe fn force_unlock(&self) {
 		self.is_locked.store(false, Ordering::Release);
-	}
-
-	/// Unlock the lock, consuming its key.
-	pub fn unlock(key: Key) {
-		drop(key);
 	}
 }
