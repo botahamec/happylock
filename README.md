@@ -27,7 +27,7 @@ for _ in 0..N {
 		let key = ThreadKey::lock().unwrap();
 
 		// unlocking a mutex requires a ThreadKey
-		let mut data = data.lock(&mut key);
+		let mut data = data.lock(key);
 		*data += 1;
 
 		// the key is unlocked at the end of the scope
@@ -41,7 +41,7 @@ println!("{}", *data);
 
 Unlocking a mutex requires a `ThreadKey` or a mutable reference to `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. This means that only one thing can be locked at a time.
 
-To lock multiple mutexes at a time, create a `LockGuard`.
+To lock multiple mutexes at a time, create a `LockSequence` or `LockCollection`.
 
 ```rust
 static DATA_1: Mutex<i32> = Mutex::new(0);
@@ -50,8 +50,11 @@ static DATA_2: Mutex<String> = Mutex::new(String::new());
 for _ in 0..N {
 	thread::spawn(move || {
 		let key = ThreadKey::lock().unwrap();
-		let data = (&DATA_1, &DATA_2);
-		let mut guard = LockGuard::lock(&data, &mut key);
+
+		// happylock ensures at runtime there are no duplicate locks
+		let collection = LockCollection::new((&DATA_1, &DATA_2));
+		let mut guard = collection.lock(key);
+
 		*guard.1 = (100 - *guard.0).to_string();
 		*guard.0 += 1;
 	});
@@ -68,7 +71,7 @@ println!("{}", *data.1);
 
 **The `ThreadKey` is a mostly-zero cost abstraction.** It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::lock()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
 
-**Avoid using `LockGuard` with two collections containing the same resource.** The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
+**Avoid using distinct lock orders for `LockCollection`.** The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
 
 ## Future Work
 
@@ -79,8 +82,6 @@ There might be some promise in trying to prevent circular wait. There could be a
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
 
 I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. The `LockCollection` requires memory allocation at this time in order to check for duplicate locks.
-
-Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation, and using an `AtomicUsize` to make the IDs would mean that creating a mutex isn't `const`. The `AtomicUsize` issue might be solvable by instead using the pointer address of the mutex. We could also try checking which thread is holding the mutex before locking it, and if it's the same thread, we'd panic. A reentrant lock sounds promising, but it would only work for readonly guards. It's worth noting that this problem wouldn't apply to lock sequences, because those must have ownership over the locks.
 
 More types might be lockable using a `LockGuard`. In addition, some sort of `DynamicLock` type might be useful so that, for example, a `Mutex<usize>` and an `RwLock<usize>` could be unlocked at the same time inside of a `Vec<DynamicLock<usize>>`. Although, this wouldn't solve the problem of needing a `Mutex<usize>` and a `Mutex<String>` at the same time. This would be better solved usin the existing tuple system.
 

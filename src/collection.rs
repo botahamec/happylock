@@ -5,6 +5,7 @@ use std::{
 
 use crate::{key::Keyable, lockable::Lockable};
 
+/// returns `true` if the list contains a duplicate
 fn contains_duplicates(l: &[usize]) -> bool {
 	for i in 0..l.len() {
 		for j in 0..l.len() {
@@ -17,6 +18,11 @@ fn contains_duplicates(l: &[usize]) -> bool {
 	false
 }
 
+/// A type which can be locked.
+///
+/// This could be a tuple of [`Lockable`] types, an array, or a `Vec`. But it
+/// can be safely locked without causing a deadlock. To do this, it is very
+/// important that no duplicate locks are included within.
 pub struct LockCollection<L> {
 	collection: L,
 }
