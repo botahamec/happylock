@@ -70,22 +70,22 @@ The `ThreadKey` is a mostly-zero cost abstraction. It doesn't use any memory, an
 
 The real performance cost comes from the fact that the sets of multiple locks must be atomic. The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
 
-Currently, a spinlock is used as the mutex. This should be fixed in future releases.
-
 ## Future Work
 
-Are the ergonomics really correct here? This is completely untreaded territory. Maybe there are some useful helper methods we don't have here yet.
+Are the ergonomics here any good? This is completely untreaded territory. Maybe there are some useful helper methods we don't have here yet. Maybe `try_lock` should return a `Result`. Maybe `lock_api` or `spin` implements some useful methods that I kept out for this proof of concept.
 
 There might be some promise in trying to prevent circular wait. There could be a special type that only allows the locking mutexes in a specific order. This would still require a thread key so that nobody tries to unlock multiple lock sequences at the same time. But this could improve performance, since we wouldn't need to worry about making sure the lock operations are atomic.
 
-It would be nice to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. 
+Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
 
-Currently, the mutex is implemented using a spinlock. We need to not do that. We could use parking lot, or the standard library.
+I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. 
 
-A more fair system for getting sets locks would help, but I have no clue what that looks like.
+It'd be nice to be able to use the mutexes built into the operating system. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible.
 
-A read-write lock would be very useful here, and maybe other primitives such as condvars and once?
+A more fair system for getting sets of locks would help, but I have no clue what that looks like.
 
-Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing. For now, that can be implemented using the `poison` crate.
+A read-write lock would be very useful here, and maybe other primitives such as condvars and barriers?
+
+Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
 
 More types might be lockable using a `LockGuard`.

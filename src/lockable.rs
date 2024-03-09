@@ -39,7 +39,7 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 
 	/// Attempt to lock without blocking.
 	///
-	/// Returns `Ok` if successful, `None` otherwise.
+	/// Returns `Some` if successful, `None` otherwise.
 	///
 	/// # Safety
 	///

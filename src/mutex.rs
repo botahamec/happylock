@@ -26,7 +26,7 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-pub struct Mutex<T: ?Sized, R: RawMutex> {
+pub struct Mutex<T: ?Sized, R> {
 	raw: R,
 	value: UnsafeCell<T>,
 }
@@ -121,7 +121,9 @@ impl<T, R: RawMutex> Mutex<T, R> {
 			value: UnsafeCell::new(value),
 		}
 	}
+}
 
+impl<T, R> Mutex<T, R> {
 	/// Consumes this mutex, returning the underlying data.
 	///
 	/// # Examples
@@ -137,7 +139,7 @@ impl<T, R: RawMutex> Mutex<T, R> {
 	}
 }
 
-impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
+impl<T: ?Sized, R> Mutex<T, R> {
 	/// Returns a mutable reference to the underlying data.
 	///
 	/// Since this call borrows `Mutex` mutably, no actual locking is taking
@@ -148,7 +150,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// ```
 	/// use happylock::{ThreadKey, Mutex};
 	///
-	/// let key = ThreadKey::lock();
+	/// let key = ThreadKey::lock().unwrap();
 	/// let mut mutex = Mutex::new(0);
 	/// *mutex.get_mut() = 10;
 	/// assert_eq!(*mutex.lock(key), 10);
@@ -156,7 +158,9 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	pub fn get_mut(&mut self) -> &mut T {
 		self.value.get_mut()
 	}
+}
 
+impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// Block the thread until this mutex can be locked, and lock it.
 	///
 	/// Upon returning, the thread is the only thread with a lock on the
