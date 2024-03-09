@@ -13,6 +13,7 @@ mod sealed {
 	impl<T: Sealed> Sealed for &mut T {}
 	impl<'a, A: Lockable<'a>, B: Lockable<'a>> Sealed for (A, B) {}
 	impl<'a, T: Lockable<'a>, const N: usize> Sealed for [T; N] {}
+	impl<'a, T: Lockable<'a>> Sealed for Vec<T> {}
 }
 
 /// A type that may be locked and unlocked
@@ -173,5 +174,37 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 
 	fn unlock(guard: Self::Output) {
 		guard.map(T::unlock);
+	}
+}
+
+unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
+	type Output = Vec<T::Output>;
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		loop {
+			if let Some(guard) = self.try_lock() {
+				return guard;
+			}
+		}
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		let mut outputs = Vec::new();
+		for lock in self {
+			if let Some(guard) = lock.try_lock() {
+				outputs.push(guard);
+			} else {
+				Self::unlock(outputs);
+				return None;
+			};
+		}
+
+		Some(outputs)
+	}
+
+	fn unlock(guard: Self::Output) {
+		for guard in guard {
+			T::unlock(guard);
+		}
 	}
 }

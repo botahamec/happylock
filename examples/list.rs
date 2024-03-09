@@ -35,7 +35,6 @@ fn main() {
 				data.push(&DATA[rand % 6]);
 			}
 
-			let data = [data[0], data[1], data[2]];
 			let mut guard = LockGuard::lock(&data, key);
 			*guard[0] += *guard[1];
 			*guard[1] += *guard[2];
