@@ -77,7 +77,7 @@ println!("{}", *data.1);
 
 Are the ergonomics here any good? This is completely untreaded territory. Maybe there are some useful helper methods we don't have here yet. Maybe `try_lock` should return a `Result`. Maybe `lock_api` or `spin` implements some useful methods that I kept out for this proof of concept.
 
-There might be some promise in trying to prevent circular wait. There could be a special type that only allows the locking mutexes in a specific order. This would still require a thread key so that nobody tries to unlock multiple lock sequences at the same time. But this could improve performance, since we wouldn't need to worry about making sure the lock operations are atomic.
+There might be some promise in trying to prevent circular wait. There could be a special type that only allows the locking mutexes in a specific order. This would still require a thread key so that nobody tries to unlock multiple lock sequences at the same time. But this could improve performance, since we wouldn't need to worry about making sure the lock operations are atomic. The biggest problem is that `LockSequence::lock_next` would need to return the same value each time, which is not very ergonomic.
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
 
