@@ -80,7 +80,7 @@ Although this library is able to successfully prevent deadlocks, livelocks may s
 
 I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait.
 
-Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation.
+Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation, and using an `AtomicUsize` to make the IDs would mean that creating a mutex isn't `const`.
 
 More types might be lockable using a `LockGuard`. In addition, some sort of `DynamicLock` type might be useful so that, for example, a `Mutex<usize>` and an `RwLock<usize>` could be unlocked at the same time inside of a `Vec<DynamicLock<usize>>`. Although, this wouldn't solve the problem of needing a `Mutex<usize>` and a `Mutex<String>` at the same time. This would be better solved usin the existing tuple system.
 
@@ -88,6 +88,6 @@ It'd be nice to be able to use the mutexes built into the operating system. Usin
 
 A more fair system for getting sets of locks would help, but I have no clue what that looks like.
 
-A read-write lock would be very useful here, and maybe other primitives such as condvars and barriers?
+Maybe adding other primitives such as condvars and barriers?
 
 Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.

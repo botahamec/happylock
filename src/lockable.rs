@@ -1,7 +1,11 @@
 use std::mem::MaybeUninit;
 
-use crate::mutex::{Mutex, MutexRef};
-use lock_api::RawMutex;
+use crate::{
+	mutex::{Mutex, MutexRef},
+	rwlock::{ReadLock, RwLock, RwLockReadRef, RwLockWriteRef, WriteLock},
+};
+
+use lock_api::{RawMutex, RawRwLock};
 
 mod sealed {
 	use super::Lockable as L;
@@ -10,6 +14,9 @@ mod sealed {
 
 	pub trait Sealed {}
 	impl<'a, T, R: RawMutex + 'a> Sealed for Mutex<T, R> {}
+	impl<'a, T, R: RawRwLock + 'a> Sealed for RwLock<T, R> {}
+	impl<'a, T, R: RawRwLock + 'a> Sealed for ReadLock<'a, T, R> {}
+	impl<'a, T, R: RawRwLock + 'a> Sealed for WriteLock<'a, T, R> {}
 	impl<T: Sealed> Sealed for &T {}
 	impl<T: Sealed> Sealed for &mut T {}
 	impl<'a, A: L<'a>> Sealed for (A,) {}
@@ -97,6 +104,54 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
 
 unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	type Output = MutexRef<'a, T, R>;
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		self.lock_no_key()
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		self.try_lock_no_key()
+	}
+
+	fn unlock(guard: Self::Output) {
+		drop(guard);
+	}
+}
+
+unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for RwLock<T, R> {
+	type Output = RwLockWriteRef<'a, T, R>;
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		self.write_no_key()
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		self.try_write_no_key()
+	}
+
+	fn unlock(guard: Self::Output) {
+		drop(guard);
+	}
+}
+
+unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for ReadLock<'a, T, R> {
+	type Output = RwLockReadRef<'a, T, R>;
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		self.lock_no_key()
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		self.try_lock_no_key()
+	}
+
+	fn unlock(guard: Self::Output) {
+		drop(guard);
+	}
+}
+
+unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for WriteLock<'a, T, R> {
+	type Output = RwLockWriteRef<'a, T, R>;
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		self.lock_no_key()

@@ -26,6 +26,7 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
+/// [`ThreadKey`]: `crate::ThreadKey`
 pub struct Mutex<T: ?Sized, R> {
 	raw: R,
 	value: UnsafeCell<T>,
@@ -185,10 +186,12 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
 	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'_, 'k, T, Key, R> {
-		self.raw.lock();
+		unsafe {
+			self.raw.lock();
 
-		// safety: we just locked the mutex
-		unsafe { MutexGuard::new(self, key) }
+			// safety: we just locked the mutex
+			MutexGuard::new(self, key)
+		}
 	}
 
 	/// Lock without a [`ThreadKey`]. You must exclusively own the
@@ -271,7 +274,6 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	///
 	/// let key = Mutex::unlock(guard);
 	/// ```
-	#[allow(clippy::missing_const_for_fn)]
 	pub fn unlock<'a, 'k: 'a, Key: Keyable + 'k>(guard: MutexGuard<'a, 'k, T, Key, R>) -> Key {
 		unsafe {
 			guard.mutex.0.force_unlock();
