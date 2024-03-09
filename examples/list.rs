@@ -1,6 +1,6 @@
 use std::thread;
 
-use happylock::{LockGuard, Mutex, ThreadKey};
+use happylock::{LockCollection, Mutex, ThreadKey};
 
 const N: usize = 10;
 
@@ -30,16 +30,23 @@ fn main() {
 	for _ in 0..N {
 		let th = thread::spawn(move || {
 			let mut key = ThreadKey::lock().unwrap();
-			let mut data = Vec::new();
-			for _ in 0..3 {
-				let rand = random(&mut key);
-				data.push(&DATA[rand % 6]);
-			}
+			loop {
+				let mut data = Vec::new();
+				for _ in 0..3 {
+					let rand = random(&mut key);
+					data.push(&DATA[rand % 6]);
+				}
 
-			let mut guard = LockGuard::lock(&data, key);
-			*guard[0] += *guard[1];
-			*guard[1] += *guard[2];
-			*guard[2] += *guard[0];
+				let Some(lock) = LockCollection::new(data) else {
+					continue;
+				};
+				let mut guard = lock.lock(&mut key);
+				*guard[0] += *guard[1];
+				*guard[1] += *guard[2];
+				*guard[2] += *guard[0];
+
+				return;
+			}
 		});
 		threads.push(th);
 	}
@@ -48,8 +55,9 @@ fn main() {
 		_ = th.join();
 	}
 
-	let mut key = ThreadKey::lock().unwrap();
-	let data = LockGuard::lock(&DATA, &mut key);
+	let key = ThreadKey::lock().unwrap();
+	let data = LockCollection::new(&DATA).unwrap();
+	let data = data.lock(key);
 	for val in &*data {
 		println!("{}", **val);
 	}

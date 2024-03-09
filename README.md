@@ -19,7 +19,7 @@ This library prevents #4, by requiring that all of the resources that a thread n
 ## Example
 
 ```rust
-let data: SpinLock<i32> = Mutex::new(0);
+let data: Mutex<i32> = Mutex::new(0);
 
 for _ in 0..N {
 	thread::spawn(move || {
@@ -44,8 +44,8 @@ Unlocking a mutex requires a `ThreadKey` or a mutable reference to `ThreadKey`. 
 To lock multiple mutexes at a time, create a `LockGuard`.
 
 ```rust
-static DATA_1: SpinLock<i32> = Mutex::new(0);
-static DATA_2: SpinLock<String> = Mutex::new(String::new());
+static DATA_1: Mutex<i32> = Mutex::new(0);
+static DATA_2: Mutex<String> = Mutex::new(String::new());
 
 for _ in 0..N {
 	thread::spawn(move || {
@@ -78,9 +78,9 @@ There might be some promise in trying to prevent circular wait. There could be a
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
 
-I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait.
+I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. The `LockCollection` requires memory allocation at this time in order to check for duplicate locks.
 
-Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation, and using an `AtomicUsize` to make the IDs would mean that creating a mutex isn't `const`.
+Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation, and using an `AtomicUsize` to make the IDs would mean that creating a mutex isn't `const`. The `AtomicUsize` issue might be solvable by instead using the pointer address of the mutex. We could also try checking which thread is holding the mutex before locking it, and if it's the same thread, we'd panic. A reentrant lock sounds promising, but it would only work for readonly guards. It's worth noting that this problem wouldn't apply to lock sequences, because those must have ownership over the locks.
 
 More types might be lockable using a `LockGuard`. In addition, some sort of `DynamicLock` type might be useful so that, for example, a `Mutex<usize>` and an `RwLock<usize>` could be unlocked at the same time inside of a `Vec<DynamicLock<usize>>`. Although, this wouldn't solve the problem of needing a `Mutex<usize>` and a `Mutex<String>` at the same time. This would be better solved usin the existing tuple system.
 

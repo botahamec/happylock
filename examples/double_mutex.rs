@@ -1,6 +1,6 @@
 use std::thread;
 
-use happylock::{LockGuard, Mutex, ThreadKey};
+use happylock::{LockCollection, Mutex, ThreadKey};
 
 const N: usize = 10;
 
@@ -13,7 +13,8 @@ fn main() {
 		let th = thread::spawn(move || {
 			let key = ThreadKey::lock().unwrap();
 			let data = (&DATA_1, &DATA_2);
-			let mut guard = LockGuard::lock(&data, key);
+			let lock = LockCollection::new(data).unwrap();
+			let mut guard = lock.lock(key);
 			*guard.1 = (100 - *guard.0).to_string();
 			*guard.0 += 1;
 		});
@@ -26,7 +27,8 @@ fn main() {
 
 	let key = ThreadKey::lock().unwrap();
 	let data = (&DATA_1, &DATA_2);
-	let data = LockGuard::lock(&data, key);
+	let data = LockCollection::new(data).unwrap();
+	let data = data.lock(key);
 	println!("{}", *data.0);
 	println!("{}", *data.1);
 }

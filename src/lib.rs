@@ -4,14 +4,14 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::semicolon_if_nothing_returned)]
 
-mod guard;
+mod collection;
 mod key;
 mod lockable;
 
 pub mod mutex;
 pub mod rwlock;
 
-pub use guard::LockGuard;
+pub use collection::LockCollection;
 pub use key::{Key, ThreadKey};
 pub use lockable::Lockable;
 pub use mutex::SpinLock;

@@ -17,9 +17,9 @@ pub struct RwLock<T: ?Sized, R> {
 	value: UnsafeCell<T>,
 }
 
-pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
+pub struct ReadLock<'a, T: ?Sized, R>(pub(crate) &'a RwLock<T, R>);
 
-pub struct WriteLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
+pub struct WriteLock<'a, T: ?Sized, R>(pub(crate) &'a RwLock<T, R>);
 
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(&'a RwLock<T, R>);
 

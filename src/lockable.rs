@@ -34,10 +34,15 @@ mod sealed {
 /// # Safety
 ///
 /// A deadlock must never occur. The `unlock` method must correctly unlock the
-/// data.
+/// data. The `get_ptrs` method must be implemented correctly. The `Output`
+/// must be unlocked when it is dropped.
 pub unsafe trait Lockable<'a>: sealed::Sealed {
 	/// The output of the lock
 	type Output;
+
+	/// Returns a list of all pointers to locks. This is used to ensure that
+	/// the same lock isn't included twice
+	fn get_ptrs(&self) -> Vec<usize>;
 
 	/// Blocks until the lock is acquired
 	///
@@ -63,13 +68,14 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	///
 	/// [`ThreadKey`]: `crate::key::ThreadKey`
 	unsafe fn try_lock(&'a self) -> Option<Self::Output>;
-
-	/// Release the lock
-	fn unlock(guard: Self::Output);
 }
 
 unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &T {
 	type Output = T::Output;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		(*self).get_ptrs()
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		(*self).lock()
@@ -78,15 +84,14 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &T {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		(*self).try_lock()
 	}
-
-	#[allow(clippy::semicolon_if_nothing_returned)]
-	fn unlock(guard: Self::Output) {
-		T::unlock(guard)
-	}
 }
 
 unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
 	type Output = T::Output;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		(**self).get_ptrs()
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		(**self).lock()
@@ -95,15 +100,14 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		(**self).try_lock()
 	}
-
-	#[allow(clippy::semicolon_if_nothing_returned)]
-	fn unlock(guard: Self::Output) {
-		T::unlock(guard)
-	}
 }
 
 unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	type Output = MutexRef<'a, T, R>;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		vec![self as *const Self as usize]
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		self.lock_no_key()
@@ -112,14 +116,14 @@ unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		self.try_lock_no_key()
 	}
-
-	fn unlock(guard: Self::Output) {
-		drop(guard);
-	}
 }
 
 unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for RwLock<T, R> {
 	type Output = RwLockWriteRef<'a, T, R>;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		vec![self as *const Self as usize]
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		self.write_no_key()
@@ -128,14 +132,14 @@ unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for RwLock<T, R> {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		self.try_write_no_key()
 	}
-
-	fn unlock(guard: Self::Output) {
-		drop(guard);
-	}
 }
 
 unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for ReadLock<'a, T, R> {
 	type Output = RwLockReadRef<'a, T, R>;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		vec![self.0 as *const RwLock<T, R> as usize]
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		self.lock_no_key()
@@ -143,16 +147,16 @@ unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for ReadLock<'a, T, R> {
 
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		self.try_lock_no_key()
-	}
-
-	fn unlock(guard: Self::Output) {
-		drop(guard);
 	}
 }
 
 unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for WriteLock<'a, T, R> {
 	type Output = RwLockWriteRef<'a, T, R>;
 
+	fn get_ptrs(&self) -> Vec<usize> {
+		vec![self.0 as *const RwLock<T, R> as usize]
+	}
+
 	unsafe fn lock(&'a self) -> Self::Output {
 		self.lock_no_key()
 	}
@@ -160,14 +164,16 @@ unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for WriteLock<'a, T, R> {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		self.try_lock_no_key()
 	}
-
-	fn unlock(guard: Self::Output) {
-		drop(guard);
-	}
 }
 
 unsafe impl<'a, A: Lockable<'a>> Lockable<'a> for (A,) {
 	type Output = (A::Output,);
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(1);
+		ptrs.append(&mut self.0.get_ptrs());
+		ptrs
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		(self.0.lock(),)
@@ -176,20 +182,22 @@ unsafe impl<'a, A: Lockable<'a>> Lockable<'a> for (A,) {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		self.0.try_lock().map(|a| (a,))
 	}
-
-	fn unlock(guard: Self::Output) {
-		A::unlock(guard.0);
-	}
 }
 
 unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
 	type Output = (A::Output, B::Output);
 
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(2);
+		ptrs.append(&mut self.0.get_ptrs());
+		ptrs.append(&mut self.1.get_ptrs());
+		ptrs
+	}
+
 	unsafe fn lock(&'a self) -> Self::Output {
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
-				A::unlock(lock0);
 				continue;
 			};
 
@@ -202,32 +210,31 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
 			return None;
 		};
 		let Some(lock1) = self.1.try_lock() else {
-			A::unlock(lock0);
 			return None;
 		};
 
 		Some((lock0, lock1))
-	}
-
-	fn unlock(guard: Self::Output) {
-		A::unlock(guard.0);
-		B::unlock(guard.1);
 	}
 }
 
 unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>> Lockable<'a> for (A, B, C) {
 	type Output = (A::Output, B::Output, C::Output);
 
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(3);
+		ptrs.append(&mut self.0.get_ptrs());
+		ptrs.append(&mut self.1.get_ptrs());
+		ptrs.append(&mut self.2.get_ptrs());
+		ptrs
+	}
+
 	unsafe fn lock(&'a self) -> Self::Output {
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
-				A::unlock(lock0);
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
 				continue;
 			};
 
@@ -240,22 +247,13 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>> Lockable<'a> 
 			return None;
 		};
 		let Some(lock1) = self.1.try_lock() else {
-			A::unlock(lock0);
 			return None;
 		};
 		let Some(lock2) = self.2.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
 			return None;
 		};
 
 		Some((lock0, lock1, lock2))
-	}
-
-	fn unlock(guard: Self::Output) {
-		A::unlock(guard.0);
-		B::unlock(guard.1);
-		C::unlock(guard.2);
 	}
 }
 
@@ -264,22 +262,25 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 {
 	type Output = (A::Output, B::Output, C::Output, D::Output);
 
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(4);
+		ptrs.append(&mut self.0.get_ptrs());
+		ptrs.append(&mut self.1.get_ptrs());
+		ptrs.append(&mut self.2.get_ptrs());
+		ptrs.append(&mut self.3.get_ptrs());
+		ptrs
+	}
+
 	unsafe fn lock(&'a self) -> Self::Output {
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
-				A::unlock(lock0);
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
 				continue;
 			};
 			let Some(lock3) = self.3.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
-				C::unlock(lock2);
 				continue;
 			};
 
@@ -292,29 +293,16 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 			return None;
 		};
 		let Some(lock1) = self.1.try_lock() else {
-			A::unlock(lock0);
 			return None;
 		};
 		let Some(lock2) = self.2.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
 			return None;
 		};
 		let Some(lock3) = self.3.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
-			C::unlock(lock2);
 			return None;
 		};
 
 		Some((lock0, lock1, lock2, lock3))
-	}
-
-	fn unlock(guard: Self::Output) {
-		A::unlock(guard.0);
-		B::unlock(guard.1);
-		C::unlock(guard.2);
-		D::unlock(guard.3);
 	}
 }
 
@@ -323,29 +311,29 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 {
 	type Output = (A::Output, B::Output, C::Output, D::Output, E::Output);
 
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(5);
+		ptrs.append(&mut self.0.get_ptrs());
+		ptrs.append(&mut self.1.get_ptrs());
+		ptrs.append(&mut self.2.get_ptrs());
+		ptrs.append(&mut self.3.get_ptrs());
+		ptrs.append(&mut self.4.get_ptrs());
+		ptrs
+	}
+
 	unsafe fn lock(&'a self) -> Self::Output {
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
-				A::unlock(lock0);
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
 				continue;
 			};
 			let Some(lock3) = self.3.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
-				C::unlock(lock2);
 				continue;
 			};
 			let Some(lock4) = self.4.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
-				C::unlock(lock2);
-				D::unlock(lock3);
 				continue;
 			};
 
@@ -358,37 +346,19 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 			return None;
 		};
 		let Some(lock1) = self.1.try_lock() else {
-			A::unlock(lock0);
 			return None;
 		};
 		let Some(lock2) = self.2.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
 			return None;
 		};
 		let Some(lock3) = self.3.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
-			C::unlock(lock2);
 			return None;
 		};
 		let Some(lock4) = self.4.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
-			C::unlock(lock2);
-			D::unlock(lock3);
 			return None;
 		};
 
 		Some((lock0, lock1, lock2, lock3, lock4))
-	}
-
-	fn unlock(guard: Self::Output) {
-		A::unlock(guard.0);
-		B::unlock(guard.1);
-		C::unlock(guard.2);
-		D::unlock(guard.3);
-		E::unlock(guard.4);
 	}
 }
 
@@ -411,37 +381,33 @@ unsafe impl<
 		F::Output,
 	);
 
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(6);
+		ptrs.append(&mut self.0.get_ptrs());
+		ptrs.append(&mut self.1.get_ptrs());
+		ptrs.append(&mut self.2.get_ptrs());
+		ptrs.append(&mut self.3.get_ptrs());
+		ptrs.append(&mut self.4.get_ptrs());
+		ptrs.append(&mut self.5.get_ptrs());
+		ptrs
+	}
+
 	unsafe fn lock(&'a self) -> Self::Output {
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
-				A::unlock(lock0);
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
 				continue;
 			};
 			let Some(lock3) = self.3.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
-				C::unlock(lock2);
 				continue;
 			};
 			let Some(lock4) = self.4.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
-				C::unlock(lock2);
-				D::unlock(lock3);
 				continue;
 			};
 			let Some(lock5) = self.5.try_lock() else {
-				A::unlock(lock0);
-				B::unlock(lock1);
-				C::unlock(lock2);
-				D::unlock(lock3);
-				E::unlock(lock4);
 				continue;
 			};
 
@@ -454,51 +420,35 @@ unsafe impl<
 			return None;
 		};
 		let Some(lock1) = self.1.try_lock() else {
-			A::unlock(lock0);
 			return None;
 		};
 		let Some(lock2) = self.2.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
 			return None;
 		};
 		let Some(lock3) = self.3.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
-			C::unlock(lock2);
 			return None;
 		};
 		let Some(lock4) = self.4.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
-			C::unlock(lock2);
-			D::unlock(lock3);
 			return None;
 		};
 		let Some(lock5) = self.5.try_lock() else {
-			A::unlock(lock0);
-			B::unlock(lock1);
-			C::unlock(lock2);
-			D::unlock(lock3);
-			E::unlock(lock4);
 			return None;
 		};
 
 		Some((lock0, lock1, lock2, lock3, lock4, lock5))
 	}
-
-	fn unlock(guard: Self::Output) {
-		A::unlock(guard.0);
-		B::unlock(guard.1);
-		C::unlock(guard.2);
-		D::unlock(guard.3);
-		E::unlock(guard.4);
-		F::unlock(guard.5);
-	}
 }
 
 unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 	type Output = [T::Output; N];
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(N);
+		for lock in self {
+			ptrs.append(&mut lock.get_ptrs());
+		}
+		ptrs
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		unsafe fn unlock_partial<'a, T: Lockable<'a>, const N: usize>(
@@ -509,7 +459,7 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 				if i == upto {
 					break;
 				}
-				T::unlock(guard.assume_init());
+				drop(guard.assume_init());
 			}
 		}
 
@@ -542,7 +492,7 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 				if i == upto {
 					break;
 				}
-				T::unlock(guard.assume_init());
+				drop(guard.assume_init());
 			}
 		}
 
@@ -558,14 +508,18 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 
 		Some(outputs.map(|mu| mu.assume_init()))
 	}
-
-	fn unlock(guard: Self::Output) {
-		guard.map(T::unlock);
-	}
 }
 
 unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	type Output = Vec<T::Output>;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(self.len());
+		for lock in self {
+			ptrs.append(&mut lock.get_ptrs());
+		}
+		ptrs
+	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		'outer: loop {
@@ -579,7 +533,6 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 				if let Some(guard) = lock.try_lock() {
 					outputs.push(guard);
 				} else {
-					Self::unlock(outputs);
 					continue 'outer;
 				};
 			}
@@ -594,17 +547,10 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 			if let Some(guard) = lock.try_lock() {
 				outputs.push(guard);
 			} else {
-				Self::unlock(outputs);
 				return None;
 			};
 		}
 
 		Some(outputs)
-	}
-
-	fn unlock(guard: Self::Output) {
-		for guard in guard {
-			T::unlock(guard);
-		}
 	}
 }
