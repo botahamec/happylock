@@ -66,9 +66,9 @@ println!("{}", *data.1);
 
 ## Performance
 
-The `ThreadKey` is a mostly-zero cost abstraction. It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::lock()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
+**The `ThreadKey` is a mostly-zero cost abstraction.** It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::lock()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
 
-The real performance cost comes from the fact that the sets of multiple locks must be atomic. The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
+**Avoid using `LockGuard` with two collections containing the same resource.** The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
 
 ## Future Work
 
@@ -82,6 +82,8 @@ I want to try to get this working without the standard library. There are a few 
 
 Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation.
 
+More types might be lockable using a `LockGuard`. In addition, some sort of `DynamicLock` type might be useful so that, for example, a `Mutex<usize>` and an `RwLock<usize>` could be unlocked at the same time inside of a `Vec<DynamicLock<usize>>`. Although, this wouldn't solve the problem of needing a `Mutex<usize>` and a `Mutex<String>` at the same time. This would be better solved usin the existing tuple system.
+
 It'd be nice to be able to use the mutexes built into the operating system. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible.
 
 A more fair system for getting sets of locks would help, but I have no clue what that looks like.
@@ -89,5 +91,3 @@ A more fair system for getting sets of locks would help, but I have no clue what
 A read-write lock would be very useful here, and maybe other primitives such as condvars and barriers?
 
 Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
-
-More types might be lockable using a `LockGuard`.

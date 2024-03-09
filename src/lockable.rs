@@ -160,6 +160,288 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
 	}
 }
 
+unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>> Lockable<'a> for (A, B, C) {
+	type Output = (A::Output, B::Output, C::Output);
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		loop {
+			let lock0 = self.0.lock();
+			let Some(lock1) = self.1.try_lock() else {
+				A::unlock(lock0);
+				continue;
+			};
+			let Some(lock2) = self.2.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				continue;
+			};
+
+			return (lock0, lock1, lock2);
+		}
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		let Some(lock0) = self.0.try_lock() else {
+			return None;
+		};
+		let Some(lock1) = self.1.try_lock() else {
+			A::unlock(lock0);
+			return None;
+		};
+		let Some(lock2) = self.2.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			return None;
+		};
+
+		Some((lock0, lock1, lock2))
+	}
+
+	fn unlock(guard: Self::Output) {
+		A::unlock(guard.0);
+		B::unlock(guard.1);
+		C::unlock(guard.2);
+	}
+}
+
+unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'a>> Lockable<'a>
+	for (A, B, C, D)
+{
+	type Output = (A::Output, B::Output, C::Output, D::Output);
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		loop {
+			let lock0 = self.0.lock();
+			let Some(lock1) = self.1.try_lock() else {
+				A::unlock(lock0);
+				continue;
+			};
+			let Some(lock2) = self.2.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				continue;
+			};
+			let Some(lock3) = self.3.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				C::unlock(lock2);
+				continue;
+			};
+
+			return (lock0, lock1, lock2, lock3);
+		}
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		let Some(lock0) = self.0.try_lock() else {
+			return None;
+		};
+		let Some(lock1) = self.1.try_lock() else {
+			A::unlock(lock0);
+			return None;
+		};
+		let Some(lock2) = self.2.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			return None;
+		};
+		let Some(lock3) = self.3.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			C::unlock(lock2);
+			return None;
+		};
+
+		Some((lock0, lock1, lock2, lock3))
+	}
+
+	fn unlock(guard: Self::Output) {
+		A::unlock(guard.0);
+		B::unlock(guard.1);
+		C::unlock(guard.2);
+		D::unlock(guard.3);
+	}
+}
+
+unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'a>, E: Lockable<'a>>
+	Lockable<'a> for (A, B, C, D, E)
+{
+	type Output = (A::Output, B::Output, C::Output, D::Output, E::Output);
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		loop {
+			let lock0 = self.0.lock();
+			let Some(lock1) = self.1.try_lock() else {
+				A::unlock(lock0);
+				continue;
+			};
+			let Some(lock2) = self.2.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				continue;
+			};
+			let Some(lock3) = self.3.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				C::unlock(lock2);
+				continue;
+			};
+			let Some(lock4) = self.4.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				C::unlock(lock2);
+				D::unlock(lock3);
+				continue;
+			};
+
+			return (lock0, lock1, lock2, lock3, lock4);
+		}
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		let Some(lock0) = self.0.try_lock() else {
+			return None;
+		};
+		let Some(lock1) = self.1.try_lock() else {
+			A::unlock(lock0);
+			return None;
+		};
+		let Some(lock2) = self.2.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			return None;
+		};
+		let Some(lock3) = self.3.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			C::unlock(lock2);
+			return None;
+		};
+		let Some(lock4) = self.4.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			C::unlock(lock2);
+			D::unlock(lock3);
+			return None;
+		};
+
+		Some((lock0, lock1, lock2, lock3, lock4))
+	}
+
+	fn unlock(guard: Self::Output) {
+		A::unlock(guard.0);
+		B::unlock(guard.1);
+		C::unlock(guard.2);
+		D::unlock(guard.3);
+		E::unlock(guard.4);
+	}
+}
+
+unsafe impl<
+		'a,
+		A: Lockable<'a>,
+		B: Lockable<'a>,
+		C: Lockable<'a>,
+		D: Lockable<'a>,
+		E: Lockable<'a>,
+		F: Lockable<'a>,
+	> Lockable<'a> for (A, B, C, D, E, F)
+{
+	type Output = (
+		A::Output,
+		B::Output,
+		C::Output,
+		D::Output,
+		E::Output,
+		F::Output,
+	);
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		loop {
+			let lock0 = self.0.lock();
+			let Some(lock1) = self.1.try_lock() else {
+				A::unlock(lock0);
+				continue;
+			};
+			let Some(lock2) = self.2.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				continue;
+			};
+			let Some(lock3) = self.3.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				C::unlock(lock2);
+				continue;
+			};
+			let Some(lock4) = self.4.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				C::unlock(lock2);
+				D::unlock(lock3);
+				continue;
+			};
+			let Some(lock5) = self.5.try_lock() else {
+				A::unlock(lock0);
+				B::unlock(lock1);
+				C::unlock(lock2);
+				D::unlock(lock3);
+				E::unlock(lock4);
+				continue;
+			};
+
+			return (lock0, lock1, lock2, lock3, lock4, lock5);
+		}
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		let Some(lock0) = self.0.try_lock() else {
+			return None;
+		};
+		let Some(lock1) = self.1.try_lock() else {
+			A::unlock(lock0);
+			return None;
+		};
+		let Some(lock2) = self.2.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			return None;
+		};
+		let Some(lock3) = self.3.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			C::unlock(lock2);
+			return None;
+		};
+		let Some(lock4) = self.4.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			C::unlock(lock2);
+			D::unlock(lock3);
+			return None;
+		};
+		let Some(lock5) = self.5.try_lock() else {
+			A::unlock(lock0);
+			B::unlock(lock1);
+			C::unlock(lock2);
+			D::unlock(lock3);
+			E::unlock(lock4);
+			return None;
+		};
+
+		Some((lock0, lock1, lock2, lock3, lock4, lock5))
+	}
+
+	fn unlock(guard: Self::Output) {
+		A::unlock(guard.0);
+		B::unlock(guard.1);
+		C::unlock(guard.2);
+		D::unlock(guard.3);
+		E::unlock(guard.4);
+		F::unlock(guard.5);
+	}
+}
+
 unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 	type Output = [T::Output; N];
 
