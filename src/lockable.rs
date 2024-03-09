@@ -4,6 +4,7 @@ use crate::mutex::{Mutex, MutexRef};
 use lock_api::RawMutex;
 
 mod sealed {
+	use super::Lockable as L;
 	#[allow(clippy::wildcard_imports)]
 	use super::*;
 
@@ -11,7 +12,12 @@ mod sealed {
 	impl<'a, T, R: RawMutex + 'a> Sealed for Mutex<T, R> {}
 	impl<T: Sealed> Sealed for &T {}
 	impl<T: Sealed> Sealed for &mut T {}
-	impl<'a, A: Lockable<'a>, B: Lockable<'a>> Sealed for (A, B) {}
+	impl<'a, A: L<'a>> Sealed for (A,) {}
+	impl<'a, A: L<'a>, B: L<'a>> Sealed for (A, B) {}
+	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>> Sealed for (A, B, C) {}
+	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>, D: L<'a>> Sealed for (A, B, C, D) {}
+	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>, D: L<'a>, E: L<'a>> Sealed for (A, B, C, D, E) {}
+	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>, D: L<'a>, E: L<'a>, F: L<'a>> Sealed for (A, B, C, D, E, F) {}
 	impl<'a, T: Lockable<'a>, const N: usize> Sealed for [T; N] {}
 	impl<'a, T: Lockable<'a>> Sealed for Vec<T> {}
 }
@@ -105,28 +111,47 @@ unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	}
 }
 
+unsafe impl<'a, A: Lockable<'a>> Lockable<'a> for (A,) {
+	type Output = (A::Output,);
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		(self.0.lock(),)
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		self.0.try_lock().map(|a| (a,))
+	}
+
+	fn unlock(guard: Self::Output) {
+		A::unlock(guard.0);
+	}
+}
+
 unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
 	type Output = (A::Output, B::Output);
 
 	unsafe fn lock(&'a self) -> Self::Output {
 		loop {
-			let lock1 = self.0.lock();
-			match self.1.try_lock() {
-				Some(lock2) => return (lock1, lock2),
-				None => A::unlock(lock1),
-			}
+			let lock0 = self.0.lock();
+			let Some(lock1) = self.1.try_lock() else {
+				A::unlock(lock0);
+				continue;
+			};
+
+			return (lock0, lock1);
 		}
 	}
 
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.0.try_lock().and_then(|guard1| {
-			if let Some(guard2) = self.1.try_lock() {
-				Some((guard1, guard2))
-			} else {
-				A::unlock(guard1);
-				None
-			}
-		})
+		let Some(lock0) = self.0.try_lock() else {
+			return None;
+		};
+		let Some(lock1) = self.1.try_lock() else {
+			A::unlock(lock0);
+			return None;
+		};
+
+		Some((lock0, lock1))
 	}
 
 	fn unlock(guard: Self::Output) {
@@ -139,10 +164,35 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 	type Output = [T::Output; N];
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			if let Some(guard) = self.try_lock() {
-				return guard;
+		unsafe fn unlock_partial<'a, T: Lockable<'a>, const N: usize>(
+			guards: [MaybeUninit<T::Output>; N],
+			upto: usize,
+		) {
+			for (i, guard) in guards.into_iter().enumerate() {
+				if i == upto {
+					break;
+				}
+				T::unlock(guard.assume_init());
 			}
+		}
+
+		'outer: loop {
+			let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
+			if N == 0 {
+				return outputs.map(|mu| mu.assume_init());
+			}
+
+			outputs[0].write(self[0].lock());
+			for i in 1..N {
+				if let Some(guard) = self[i].try_lock() {
+					outputs[i].write(guard)
+				} else {
+					unlock_partial::<T, N>(outputs, i);
+					continue 'outer;
+				};
+			}
+
+			return outputs.map(|mu| mu.assume_init());
 		}
 	}
 
@@ -181,15 +231,28 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	type Output = Vec<T::Output>;
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			if let Some(guard) = self.try_lock() {
-				return guard;
+		'outer: loop {
+			let mut outputs = Vec::with_capacity(self.len());
+			if self.is_empty() {
+				return outputs;
 			}
+
+			outputs.push(self[0].lock());
+			for lock in self.iter().skip(1) {
+				if let Some(guard) = lock.try_lock() {
+					outputs.push(guard);
+				} else {
+					Self::unlock(outputs);
+					continue 'outer;
+				};
+			}
+
+			return outputs;
 		}
 	}
 
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let mut outputs = Vec::new();
+		let mut outputs = Vec::with_capacity(self.len());
 		for lock in self {
 			if let Some(guard) = lock.try_lock() {
 				outputs.push(guard);

@@ -2,6 +2,7 @@
 #![warn(clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::declare_interior_mutable_const)]
+#![allow(clippy::semicolon_if_nothing_returned)]
 
 mod guard;
 mod key;

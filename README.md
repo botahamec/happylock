@@ -78,7 +78,9 @@ There might be some promise in trying to prevent circular wait. There could be a
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
 
-I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. 
+I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait.
+
+Theoretically, it's possible to include the same mutex in a list twice, preventing the entire lock from being obtained. And this is technically a deadlock. A pretty easy to prevent deadlock, but a deadlock nonetheless. This is difficult to prevent, but could maybe be done by giving each mutex an ID, and then ensuring that the same ID doesn't appear twice in a list. This is an O(n^2) operation.
 
 It'd be nice to be able to use the mutexes built into the operating system. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible.
 
