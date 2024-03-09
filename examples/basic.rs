@@ -7,12 +7,18 @@ const N: usize = 10;
 static DATA: Mutex<i32> = Mutex::new(0);
 
 fn main() {
+	let mut threads = Vec::new();
 	for _ in 0..N {
-		thread::spawn(move || {
+		let th = thread::spawn(move || {
 			let key = ThreadKey::lock().unwrap();
 			let mut data = DATA.lock(key);
 			*data += 1;
 		});
+		threads.push(th);
+	}
+
+	for th in threads {
+		_ = th.join();
 	}
 
 	let key = ThreadKey::lock().unwrap();

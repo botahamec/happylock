@@ -8,14 +8,20 @@ static DATA_1: Mutex<i32> = Mutex::new(0);
 static DATA_2: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
+	let mut threads = Vec::new();
 	for _ in 0..N {
-		thread::spawn(move || {
+		let th = thread::spawn(move || {
 			let key = ThreadKey::lock().unwrap();
 			let data = (&DATA_1, &DATA_2);
 			let mut guard = LockGuard::lock(&data, key);
 			*guard.1 = (100 - *guard.0).to_string();
 			*guard.0 += 1;
 		});
+		threads.push(th);
+	}
+
+	for th in threads {
+		_ = th.join();
 	}
 
 	let key = ThreadKey::lock().unwrap();

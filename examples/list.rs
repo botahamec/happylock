@@ -26,8 +26,9 @@ fn random(key: &mut ThreadKey) -> usize {
 }
 
 fn main() {
+	let mut threads = Vec::new();
 	for _ in 0..N {
-		thread::spawn(move || {
+		let th = thread::spawn(move || {
 			let mut key = ThreadKey::lock().unwrap();
 			let mut data = Vec::new();
 			for _ in 0..3 {
@@ -40,6 +41,11 @@ fn main() {
 			*guard[1] += *guard[2];
 			*guard[2] += *guard[0];
 		});
+		threads.push(th);
+	}
+
+	for th in threads {
+		_ = th.join();
 	}
 
 	let mut key = ThreadKey::lock().unwrap();
