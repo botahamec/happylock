@@ -37,7 +37,7 @@ fn main() {
 					data.push(&DATA[rand % 6]);
 				}
 
-				let Some(lock) = LockCollection::new(data) else {
+				let Some(lock) = LockCollection::try_new(data) else {
 					continue;
 				};
 				let mut guard = lock.lock(&mut key);
@@ -56,7 +56,7 @@ fn main() {
 	}
 
 	let key = ThreadKey::lock().unwrap();
-	let data = LockCollection::new(&DATA).unwrap();
+	let data = LockCollection::new_ref(&DATA);
 	let data = data.lock(key);
 	for val in &*data {
 		println!("{}", **val);

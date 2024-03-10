@@ -4,16 +4,14 @@ use happylock::{LockCollection, Mutex, ThreadKey};
 
 const N: usize = 10;
 
-static DATA_1: Mutex<i32> = Mutex::new(0);
-static DATA_2: Mutex<String> = Mutex::new(String::new());
+static DATA: (Mutex<i32>, Mutex<String>) = (Mutex::new(0), Mutex::new(String::new()));
 
 fn main() {
 	let mut threads = Vec::new();
 	for _ in 0..N {
 		let th = thread::spawn(move || {
 			let key = ThreadKey::lock().unwrap();
-			let data = (&DATA_1, &DATA_2);
-			let lock = LockCollection::new(data).unwrap();
+			let lock = LockCollection::new_ref(&DATA);
 			let mut guard = lock.lock(key);
 			*guard.1 = (100 - *guard.0).to_string();
 			*guard.0 += 1;
@@ -26,8 +24,7 @@ fn main() {
 	}
 
 	let key = ThreadKey::lock().unwrap();
-	let data = (&DATA_1, &DATA_2);
-	let data = LockCollection::new(data).unwrap();
+	let data = LockCollection::new_ref(&DATA);
 	let data = data.lock(key);
 	println!("{}", *data.0);
 	println!("{}", *data.1);

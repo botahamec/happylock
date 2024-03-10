@@ -3,13 +3,16 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use crate::{key::Keyable, lockable::Lockable};
+use crate::{
+	key::Keyable,
+	lockable::{Lockable, OwnedLockable},
+};
 
 /// returns `true` if the list contains a duplicate
 fn contains_duplicates(l: &[usize]) -> bool {
 	for i in 0..l.len() {
-		for j in 0..l.len() {
-			if i != j && l[i] == l[j] {
+		for j in (i + 1)..l.len() {
+			if l[i] == l[j] {
 				return true;
 			}
 		}
@@ -46,11 +49,36 @@ impl<L> LockCollection<L> {
 	}
 }
 
+impl<'a, L: OwnedLockable<'a>> LockCollection<L> {
+	/// Creates a new collection of owned locks.
+	///
+	/// Because the locks are owned, there's no need to do any checks for
+	/// duplicate values.
+	pub const fn new(collection: L) -> Self {
+		Self { collection }
+	}
+
+	/// Creates a new collection of owned locks.
+	///
+	/// Because the locks are owned, there's no need to do any checks for
+	/// duplicate values.
+	pub const fn new_ref(collection: &L) -> LockCollection<&L> {
+		LockCollection { collection }
+	}
+}
+
 impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// Creates a new collection of locks.
 	///
-	/// This returns `None` if any locks are found twice in the given collection.
-	pub fn new(collection: L) -> Option<Self> {
+	/// This returns `None` if any locks are found twice in the given
+	/// collection.
+	///
+	/// # Performance
+	///
+	/// This does a check at runtime to make sure that the collection contains
+	/// no two copies of the same lock. This is an `O(n^2)` operation. Prefer
+	/// [`LockCollection::new`] or [`LockCollection::new_ref`] instead.
+	pub fn try_new(collection: L) -> Option<Self> {
 		let ptrs = collection.get_ptrs();
 		if contains_duplicates(&ptrs) {
 			return None;

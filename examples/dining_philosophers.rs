@@ -48,7 +48,10 @@ impl Philosopher {
 	fn cycle(&self) {
 		let key = ThreadKey::lock().unwrap();
 		thread::sleep(Duration::from_secs(1));
-		let forks = LockCollection::new([&FORKS[self.left], &FORKS[self.right]]).unwrap();
+
+		// safety: no philosopher asks for the same fork twice
+		let forks =
+			unsafe { LockCollection::new_unchecked([&FORKS[self.left], &FORKS[self.right]]) };
 		let forks = forks.lock(key);
 		println!("{} is eating...", self.name);
 		thread::sleep(Duration::from_secs(1));

@@ -29,6 +29,15 @@ mod sealed {
 	impl<'a, T: Lockable<'a>> Sealed for Vec<T> {}
 }
 
+/// A type that may be locked and unlocked, and is known to be the only valid
+/// instance of the lock.
+///
+/// # Safety
+///
+/// There must not be any two values which can unlock the value at the same
+/// time, i.e., this must either be an owned value or a mutable reference.
+pub unsafe trait OwnedLockable<'a>: Lockable<'a> {}
+
 /// A type that may be locked and unlocked
 ///
 /// # Safety
@@ -102,6 +111,8 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
 	}
 }
 
+unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for &mut T {}
+
 unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
 	type Output = MutexRef<'a, T, R>;
 
@@ -133,6 +144,10 @@ unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for RwLock<T, R> {
 		self.try_write_no_key()
 	}
 }
+
+unsafe impl<'a, T: 'a, R: RawMutex + 'a> OwnedLockable<'a> for Mutex<T, R> {}
+
+unsafe impl<'a, T: 'a, R: RawRwLock + 'a> OwnedLockable<'a> for RwLock<T, R> {}
 
 unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for ReadLock<'a, T, R> {
 	type Output = RwLockReadRef<'a, T, R>;
@@ -439,6 +454,43 @@ unsafe impl<
 	}
 }
 
+unsafe impl<'a, A: OwnedLockable<'a>> OwnedLockable<'a> for (A,) {}
+unsafe impl<'a, A: OwnedLockable<'a>, B: OwnedLockable<'a>> OwnedLockable<'a> for (A, B) {}
+unsafe impl<'a, A: OwnedLockable<'a>, B: OwnedLockable<'a>, C: OwnedLockable<'a>> OwnedLockable<'a>
+	for (A, B, C)
+{
+}
+unsafe impl<
+		'a,
+		A: OwnedLockable<'a>,
+		B: OwnedLockable<'a>,
+		C: OwnedLockable<'a>,
+		D: OwnedLockable<'a>,
+	> OwnedLockable<'a> for (A, B, C, D)
+{
+}
+unsafe impl<
+		'a,
+		A: OwnedLockable<'a>,
+		B: OwnedLockable<'a>,
+		C: OwnedLockable<'a>,
+		D: OwnedLockable<'a>,
+		E: OwnedLockable<'a>,
+	> OwnedLockable<'a> for (A, B, C, D, E)
+{
+}
+unsafe impl<
+		'a,
+		A: OwnedLockable<'a>,
+		B: OwnedLockable<'a>,
+		C: OwnedLockable<'a>,
+		D: OwnedLockable<'a>,
+		E: OwnedLockable<'a>,
+		F: OwnedLockable<'a>,
+	> OwnedLockable<'a> for (A, B, C, D, E, F)
+{
+}
+
 unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 	type Output = [T::Output; N];
 
@@ -554,3 +606,6 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 		Some(outputs)
 	}
 }
+
+unsafe impl<'a, T: OwnedLockable<'a>, const N: usize> OwnedLockable<'a> for [T; N] {}
+unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Vec<T> {}
