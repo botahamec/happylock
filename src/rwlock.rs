@@ -7,8 +7,10 @@ use lock_api::RawRwLock;
 
 use crate::key::Keyable;
 
+#[cfg(feature = "spin")]
 pub type SpinRwLock<T> = RwLock<T, spin::RwLock<()>>;
 
+#[cfg(feature = "parking_lot")]
 pub type ParkingRwLock<T> = RwLock<T, parking_lot::RawRwLock>;
 
 pub struct RwLock<T: ?Sized, R> {

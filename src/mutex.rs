@@ -8,9 +8,11 @@ use lock_api::RawMutex;
 use crate::key::Keyable;
 
 /// A spinning mutex
+#[cfg(feature = "spin")]
 pub type SpinLock<T> = Mutex<T, spin::Mutex<()>>;
 
 /// A parking lot mutex
+#[cfg(feature = "parking_lot")]
 pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 
 /// A mutual exclusion primitive useful for protecting shared data, which

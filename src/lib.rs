@@ -13,6 +13,8 @@ pub mod rwlock;
 
 pub use collection::LockCollection;
 pub use lockable::Lockable;
+
+#[cfg(feature = "spin")]
 pub use mutex::SpinLock;
 
 /// The key for the current thread.
@@ -24,9 +26,11 @@ pub type ThreadKey = key::Key<'static>;
 /// A mutual exclusion primitive useful for protecting shared data, which cannot deadlock.
 ///
 /// By default, this uses `parking_lot` as a backend.
+#[cfg(feature = "parking_lot")]
 pub type Mutex<T> = mutex::Mutex<T, parking_lot::RawMutex>;
 
 /// A reader-writer lock
 ///
 /// By default, this uses `parking_lot` as a backend.
+#[cfg(feature = "parking_lot")]
 pub type RwLock<T> = rwlock::RwLock<T, parking_lot::RawRwLock>;

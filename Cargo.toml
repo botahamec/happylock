@@ -17,5 +17,8 @@ categories = ["concurrency"]
 thread_local = "1"
 once_cell = "1"
 lock_api = "0.4"
-parking_lot = "0.12"
-spin = "0.9"
+parking_lot = { version = "0.12", optional = true }
+spin = { version = "0.9", optional = true }
+
+[features]
+default = ["parking_lot"]
