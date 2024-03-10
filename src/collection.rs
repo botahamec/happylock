@@ -1,7 +1,5 @@
-use std::{
-	marker::PhantomData,
-	ops::{Deref, DerefMut},
-};
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 
 use crate::{
 	key::Keyable,
@@ -9,6 +7,7 @@ use crate::{
 };
 
 /// returns `true` if the list contains a duplicate
+#[must_use]
 fn contains_duplicates(l: &[usize]) -> bool {
 	for i in 0..l.len() {
 		for j in (i + 1)..l.len() {
@@ -26,6 +25,7 @@ fn contains_duplicates(l: &[usize]) -> bool {
 /// This could be a tuple of [`Lockable`] types, an array, or a `Vec`. But it
 /// can be safely locked without causing a deadlock. To do this, it is very
 /// important that no duplicate locks are included within.
+#[derive(Debug, Clone, Copy)]
 pub struct LockCollection<L> {
 	collection: L,
 }
@@ -37,15 +37,81 @@ pub struct LockGuard<'a, 'key: 'a, L: Lockable<'a>, Key: Keyable + 'key> {
 	_phantom: PhantomData<&'key ()>,
 }
 
-impl<L> LockCollection<L> {
-	/// Creates a new collections of locks.
-	///
-	/// # Safety
-	///
-	/// This results in undefined behavior if any locks are presented twice
-	/// within this collection.
-	pub const unsafe fn new_unchecked(collection: L) -> Self {
-		Self { collection }
+impl<'a, L: OwnedLockable<'a>> From<L> for LockCollection<L> {
+	fn from(value: L) -> Self {
+		Self::new(value)
+	}
+}
+
+impl<'a, L: OwnedLockable<'a>> AsRef<L> for LockCollection<L> {
+	fn as_ref(&self) -> &L {
+		&self.collection
+	}
+}
+
+impl<'a, L: OwnedLockable<'a>> AsMut<L> for LockCollection<L> {
+	fn as_mut(&mut self) -> &mut L {
+		&mut self.collection
+	}
+}
+
+impl<'a, L: OwnedLockable<'a>> AsRef<Self> for LockCollection<L> {
+	fn as_ref(&self) -> &Self {
+		self
+	}
+}
+
+impl<'a, L: OwnedLockable<'a>> AsMut<Self> for LockCollection<L> {
+	fn as_mut(&mut self) -> &mut Self {
+		self
+	}
+}
+
+impl<L: IntoIterator> IntoIterator for LockCollection<L> {
+	type Item = L::Item;
+	type IntoIter = L::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.collection.into_iter()
+	}
+}
+
+impl<'a, L> IntoIterator for &'a LockCollection<L>
+where
+	&'a L: IntoIterator,
+{
+	type Item = <&'a L as IntoIterator>::Item;
+	type IntoIter = <&'a L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.collection.into_iter()
+	}
+}
+
+impl<'a, L> IntoIterator for &'a mut LockCollection<L>
+where
+	&'a mut L: IntoIterator,
+{
+	type Item = <&'a mut L as IntoIterator>::Item;
+	type IntoIter = <&'a mut L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.collection.into_iter()
+	}
+}
+
+impl<'a, L: OwnedLockable<'a>, I: FromIterator<L> + OwnedLockable<'a>> FromIterator<L>
+	for LockCollection<I>
+{
+	fn from_iter<T: IntoIterator<Item = L>>(iter: T) -> Self {
+		let iter: I = iter.into_iter().collect();
+		Self::new(iter)
+	}
+}
+
+impl<'a, E: OwnedLockable<'a> + Extend<L>, L: OwnedLockable<'a>> Extend<L> for LockCollection<E> {
+	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
+		self.collection.extend(iter)
 	}
 }
 
@@ -54,6 +120,7 @@ impl<'a, L: OwnedLockable<'a>> LockCollection<L> {
 	///
 	/// Because the locks are owned, there's no need to do any checks for
 	/// duplicate values.
+	#[must_use]
 	pub const fn new(collection: L) -> Self {
 		Self { collection }
 	}
@@ -62,8 +129,22 @@ impl<'a, L: OwnedLockable<'a>> LockCollection<L> {
 	///
 	/// Because the locks are owned, there's no need to do any checks for
 	/// duplicate values.
+	#[must_use]
 	pub const fn new_ref(collection: &L) -> LockCollection<&L> {
 		LockCollection { collection }
+	}
+}
+
+impl<L> LockCollection<L> {
+	/// Creates a new collections of locks.
+	///
+	/// # Safety
+	///
+	/// This results in undefined behavior if any locks are presented twice
+	/// within this collection.
+	#[must_use]
+	pub const unsafe fn new_unchecked(collection: L) -> Self {
+		Self { collection }
 	}
 }
 
@@ -78,6 +159,7 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// This does a check at runtime to make sure that the collection contains
 	/// no two copies of the same lock. This is an `O(n^2)` operation. Prefer
 	/// [`LockCollection::new`] or [`LockCollection::new_ref`] instead.
+	#[must_use]
 	pub fn try_new(collection: L) -> Option<Self> {
 		let ptrs = collection.get_ptrs();
 		if contains_duplicates(&ptrs) {
@@ -120,6 +202,27 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	pub fn unlock<'key: 'a, Key: Keyable + 'key>(guard: LockGuard<'a, 'key, L, Key>) -> Key {
 		drop(guard.guard);
 		guard.key
+	}
+}
+
+impl<'a, L: 'a> LockCollection<L>
+where
+	&'a L: IntoIterator,
+{
+	/// Returns an iterator over references to each value in the collection.
+	pub fn iter(&'a self) -> <&'a L as IntoIterator>::IntoIter {
+		self.into_iter()
+	}
+}
+
+impl<'a, L: 'a> LockCollection<L>
+where
+	&'a mut L: IntoIterator,
+{
+	/// Returns an iterator over mutable references to each value in the
+	/// collection.
+	pub fn iter_mut(&'a mut self) -> <&'a mut L as IntoIterator>::IntoIter {
+		self.into_iter()
 	}
 }
 

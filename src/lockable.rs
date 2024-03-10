@@ -7,28 +7,6 @@ use crate::{
 
 use lock_api::{RawMutex, RawRwLock};
 
-mod sealed {
-	use super::Lockable as L;
-	#[allow(clippy::wildcard_imports)]
-	use super::*;
-
-	pub trait Sealed {}
-	impl<'a, T, R: RawMutex + 'a> Sealed for Mutex<T, R> {}
-	impl<'a, T, R: RawRwLock + 'a> Sealed for RwLock<T, R> {}
-	impl<'a, T, R: RawRwLock + 'a> Sealed for ReadLock<'a, T, R> {}
-	impl<'a, T, R: RawRwLock + 'a> Sealed for WriteLock<'a, T, R> {}
-	impl<T: Sealed> Sealed for &T {}
-	impl<T: Sealed> Sealed for &mut T {}
-	impl<'a, A: L<'a>> Sealed for (A,) {}
-	impl<'a, A: L<'a>, B: L<'a>> Sealed for (A, B) {}
-	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>> Sealed for (A, B, C) {}
-	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>, D: L<'a>> Sealed for (A, B, C, D) {}
-	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>, D: L<'a>, E: L<'a>> Sealed for (A, B, C, D, E) {}
-	impl<'a, A: L<'a>, B: L<'a>, C: L<'a>, D: L<'a>, E: L<'a>, F: L<'a>> Sealed for (A, B, C, D, E, F) {}
-	impl<'a, T: Lockable<'a>, const N: usize> Sealed for [T; N] {}
-	impl<'a, T: Lockable<'a>> Sealed for Vec<T> {}
-}
-
 /// A type that may be locked and unlocked, and is known to be the only valid
 /// instance of the lock.
 ///
@@ -45,12 +23,13 @@ pub unsafe trait OwnedLockable<'a>: Lockable<'a> {}
 /// A deadlock must never occur. The `unlock` method must correctly unlock the
 /// data. The `get_ptrs` method must be implemented correctly. The `Output`
 /// must be unlocked when it is dropped.
-pub unsafe trait Lockable<'a>: sealed::Sealed {
+pub unsafe trait Lockable<'a> {
 	/// The output of the lock
 	type Output;
 
 	/// Returns a list of all pointers to locks. This is used to ensure that
 	/// the same lock isn't included twice
+	#[must_use]
 	fn get_ptrs(&self) -> Vec<usize>;
 
 	/// Blocks until the lock is acquired
@@ -62,7 +41,7 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	/// which should last as long as the return value is alive.
 	/// * Call this on multiple locks without unlocking first.
 	///
-	/// [`ThreadKey`]: `crate::key::ThreadKey`
+	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn lock(&'a self) -> Self::Output;
 
 	/// Attempt to lock without blocking.
@@ -75,7 +54,7 @@ pub unsafe trait Lockable<'a>: sealed::Sealed {
 	/// access to the [`ThreadKey`], which should last as long as the return
 	/// value is alive.
 	///
-	/// [`ThreadKey`]: `crate::key::ThreadKey`
+	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn try_lock(&'a self) -> Option<Self::Output>;
 }
 
@@ -153,7 +132,7 @@ unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for ReadLock<'a, T, R> {
 	type Output = RwLockReadRef<'a, T, R>;
 
 	fn get_ptrs(&self) -> Vec<usize> {
-		vec![self.0 as *const RwLock<T, R> as usize]
+		vec![self.as_ref() as *const RwLock<T, R> as usize]
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
@@ -169,7 +148,7 @@ unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for WriteLock<'a, T, R> {
 	type Output = RwLockWriteRef<'a, T, R>;
 
 	fn get_ptrs(&self) -> Vec<usize> {
-		vec![self.0 as *const RwLock<T, R> as usize]
+		vec![self.as_ref() as *const RwLock<T, R> as usize]
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
@@ -562,6 +541,51 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 	}
 }
 
+unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
+	type Output = Box<[T::Output]>;
+
+	fn get_ptrs(&self) -> Vec<usize> {
+		let mut ptrs = Vec::with_capacity(self.len());
+		for lock in &**self {
+			ptrs.append(&mut lock.get_ptrs());
+		}
+		ptrs
+	}
+
+	unsafe fn lock(&'a self) -> Self::Output {
+		'outer: loop {
+			let mut outputs = Vec::with_capacity(self.len());
+			if self.is_empty() {
+				return outputs.into_boxed_slice();
+			}
+
+			outputs.push(self[0].lock());
+			for lock in self.iter().skip(1) {
+				if let Some(guard) = lock.try_lock() {
+					outputs.push(guard);
+				} else {
+					continue 'outer;
+				};
+			}
+
+			return outputs.into_boxed_slice();
+		}
+	}
+
+	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
+		let mut outputs = Vec::with_capacity(self.len());
+		for lock in &**self {
+			if let Some(guard) = lock.try_lock() {
+				outputs.push(guard);
+			} else {
+				return None;
+			};
+		}
+
+		Some(outputs.into_boxed_slice())
+	}
+}
+
 unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	type Output = Vec<T::Output>;
 
@@ -608,4 +632,5 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 }
 
 unsafe impl<'a, T: OwnedLockable<'a>, const N: usize> OwnedLockable<'a> for [T; N] {}
+unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Box<[T]> {}
 unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Vec<T> {}

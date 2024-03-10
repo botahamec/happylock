@@ -52,7 +52,7 @@ for _ in 0..N {
 		let key = ThreadKey::lock().unwrap();
 
 		// happylock ensures at runtime there are no duplicate locks
-		let collection = LockCollection::new((&DATA_1, &DATA_2));
+		let collection = LockCollection::try_new((&DATA_1, &DATA_2)).unwrap();
 		let mut guard = collection.lock(key);
 
 		*guard.1 = (100 - *guard.0).to_string();
@@ -77,20 +77,22 @@ println!("{}", *data.1);
 
 ## Future Work
 
-Are the ergonomics here any good? This is completely untreaded territory. Maybe there are some useful helper methods we don't have here yet. Maybe `try_lock` should return a `Result`. Maybe `lock_api` or `spin` implements some useful methods that I kept out for this proof of concept.
+Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow. A more fair system for getting sets of locks would help, but I have no clue what that looks like.
 
-There might be some promise in trying to prevent circular wait. There could be a special type that only allows the locking mutexes in a specific order. This would still require a thread key so that nobody tries to unlock multiple lock sequences at the same time. But this could improve performance, since we wouldn't need to worry about making sure the lock operations are atomic. The biggest problem is that `LockSequence::lock_next` would need to return the same value each time, which is not very ergonomic.
+We should add `Condvar` at some point. I didn't because I've never used it before, and I'm probably not the right person to solve this problem. I think all the synchronization problems could be solved by having `Condvar::wait` take a `ThreadKey` instead of a `MutexGuard`. Something similar can probably be done for `Barrier`. But again, I'm no expert.
 
-Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
+Do `OnceLock` or `LazyLock` ever deadlock? We might not need to add those here.
+
+It'd be nice to be able to use the mutexes built into the operating system, saving on binary size. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible.
+
+Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
+
+Are the ergonomics here any good? This is completely uncharted territory. Maybe there are some useful helper methods we don't have here yet. Maybe `try_lock` should return a `Result`. Maybe `lock_api` or `spin` implements some useful methods that I kept out for this proof of concept. Maybe there are some lock-specific methods that could be added to `LockCollection`. More types might be lockable using a `LockGuard`.
 
 I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. The `LockCollection` requires memory allocation at this time in order to check for duplicate locks.
 
-More types might be lockable using a `LockGuard`. In addition, some sort of `DynamicLock` type might be useful so that, for example, a `Mutex<usize>` and an `RwLock<usize>` could be unlocked at the same time inside of a `Vec<DynamicLock<usize>>`. Although, this wouldn't solve the problem of needing a `Mutex<usize>` and a `Mutex<String>` at the same time. This would be better solved usin the existing tuple system.
+It'd be interesting to add some methods such as `lock_clone` or `lock_swap`. This would still require a thread key, in case the mutex is already locked. The only way this could be done without a thread key is with a `&mut Mutex<T>`, but we already have `get_mut`. A special lock that looks like `Cell` but implements `Sync` could be shared without a thread key, because the lock would be dropped immediately (solving non-preemptive allocation). It might make some common operations easier.
 
-It'd be nice to be able to use the mutexes built into the operating system. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible.
+There might be some use in trying to prevent circular wait. There could be a special type that only allows the locking mutexes in a specific order. This would still require a thread key so that nobody tries to unlock multiple lock sequences at the same time. The biggest problem is that `LockSequence::lock_next` would need to return the same value each time, which is not very flexible. Most use cases for this are solved already by using `LockCollection<OwnedLockable>`.
 
-A more fair system for getting sets of locks would help, but I have no clue what that looks like.
-
-Maybe adding other primitives such as condvars and barriers?
-
-Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
+Some sort of `DynamicLock` type might be useful so that, for example, a `Mutex<usize>` and an `RwLock<usize>` could be unlocked at the same time inside of a `Vec<DynamicLock<usize>>`. Although, this wouldn't solve the problem of needing a `Mutex<usize>` and a `Mutex<String>` at the same time. This would be better solved usin the existing tuple system.

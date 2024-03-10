@@ -1,8 +1,7 @@
-use std::{
-	cell::UnsafeCell,
-	marker::PhantomData,
-	ops::{Deref, DerefMut},
-};
+use std::cell::UnsafeCell;
+use std::fmt::Debug;
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 
 use lock_api::RawRwLock;
 
@@ -17,9 +16,9 @@ pub struct RwLock<T: ?Sized, R> {
 	value: UnsafeCell<T>,
 }
 
-pub struct ReadLock<'a, T: ?Sized, R>(pub(crate) &'a RwLock<T, R>);
+pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
 
-pub struct WriteLock<'a, T: ?Sized, R>(pub(crate) &'a RwLock<T, R>);
+pub struct WriteLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
 
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(&'a RwLock<T, R>);
 
@@ -36,6 +35,9 @@ pub struct RwLockWriteGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLo
 	thread_key: Key,
 	_phantom: PhantomData<&'key ()>,
 }
+
+unsafe impl<R: RawRwLock + Send, T: ?Sized + Send> Send for RwLock<T, R> {}
+unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<T, R> {}
 
 impl<'a, T: ?Sized + 'a, R: RawRwLock> Deref for RwLockReadRef<'a, T, R> {
 	type Target = T;
@@ -117,6 +119,7 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
+	#[must_use]
 	const unsafe fn new(rwlock: &'a RwLock<T, R>, thread_key: Key) -> Self {
 		Self {
 			rwlock: RwLockReadRef(rwlock),
@@ -131,6 +134,7 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
+	#[must_use]
 	const unsafe fn new(rwlock: &'a RwLock<T, R>, thread_key: Key) -> Self {
 		Self {
 			rwlock: RwLockWriteRef(rwlock),
@@ -141,11 +145,66 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 }
 
 impl<T, R: RawRwLock> RwLock<T, R> {
+	#[must_use]
 	pub const fn new(value: T) -> Self {
 		Self {
 			value: UnsafeCell::new(value),
 			raw: R::INIT,
 		}
+	}
+}
+
+impl<T: ?Sized, R> Debug for RwLock<T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str(&format!("RwLock<{}>", std::any::type_name::<T>()))
+	}
+}
+
+impl<T, R: RawRwLock> From<T> for RwLock<T, R> {
+	fn from(value: T) -> Self {
+		Self::new(value)
+	}
+}
+
+impl<T: ?Sized, R> AsMut<T> for RwLock<T, R> {
+	fn as_mut(&mut self) -> &mut T {
+		self.get_mut()
+	}
+}
+
+impl<'a, T: ?Sized, R> Debug for ReadLock<'a, T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str(&format!("ReadLock<{}>", std::any::type_name::<T>()))
+	}
+}
+
+impl<'a, T: ?Sized, R> From<&'a RwLock<T, R>> for ReadLock<'a, T, R> {
+	fn from(value: &'a RwLock<T, R>) -> Self {
+		Self::new(value)
+	}
+}
+
+impl<'a, T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'a, T, R> {
+	fn as_ref(&self) -> &RwLock<T, R> {
+		self.0
+	}
+}
+
+impl<'a, T: ?Sized, R> Debug for WriteLock<'a, T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str(&format!("WriteLock<{}>", std::any::type_name::<T>()))
+	}
+}
+
+impl<'a, T: ?Sized, R> From<&'a RwLock<T, R>> for WriteLock<'a, T, R> {
+	fn from(value: &'a RwLock<T, R>) -> Self {
+		Self::new(value)
+	}
+}
+
+impl<'a, T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<'a, T, R> {
+	fn as_ref(&self) -> &RwLock<T, R> {
+		self.0
 	}
 }
 
@@ -273,7 +332,8 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	}
 }
 
-impl<'a, T, R> ReadLock<'a, T, R> {
+impl<'a, T: ?Sized, R> ReadLock<'a, T, R> {
+	#[must_use]
 	pub const fn new(rwlock: &'a RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
@@ -307,7 +367,8 @@ impl<'a, T: ?Sized, R: RawRwLock> ReadLock<'a, T, R> {
 	}
 }
 
-impl<'a, T, R> WriteLock<'a, T, R> {
+impl<'a, T: ?Sized, R> WriteLock<'a, T, R> {
+	#[must_use]
 	pub const fn new(rwlock: &'a RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}

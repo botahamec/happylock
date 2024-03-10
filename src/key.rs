@@ -6,9 +6,10 @@ use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
 
 use self::sealed::Sealed;
+use super::ThreadKey;
 
 mod sealed {
-	use super::ThreadKey;
+	use crate::ThreadKey;
 	pub trait Sealed {}
 	impl Sealed for ThreadKey {}
 	impl Sealed for &mut ThreadKey {}
@@ -16,12 +17,7 @@ mod sealed {
 
 static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 
-/// The key for the current thread.
-///
-/// Only one of these exist per thread. To get the current thread's key, call
-/// [`ThreadKey::lock`]. If the `ThreadKey` is dropped, it can be reobtained.
-pub type ThreadKey = Key<'static>;
-
+/// A key that can be obtained and dropped
 pub struct Key<'a> {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
 	lock: &'a AtomicLock,
@@ -85,6 +81,7 @@ impl AtomicLock {
 	///
 	/// This is not a fair lock. It is not recommended to call this function
 	/// repeatedly in a loop.
+	#[must_use]
 	pub fn try_lock(&self) -> Option<Key> {
 		// safety: we just acquired the lock
 		(!self.is_locked.swap(true, Ordering::Acquire)).then_some(Key {

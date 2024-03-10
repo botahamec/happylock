@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -97,6 +98,7 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> DerefMut
 impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> MutexGuard<'a, 'key, T, Key, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
+	#[must_use]
 	const unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: Key) -> Self {
 		Self {
 			mutex: MutexRef(mutex),
@@ -116,11 +118,30 @@ impl<T, R: RawMutex> Mutex<T, R> {
 	///
 	/// let mutex = Mutex::new(0);
 	/// ```
+	#[must_use]
 	pub const fn new(value: T) -> Self {
 		Self {
 			raw: R::INIT,
 			value: UnsafeCell::new(value),
 		}
+	}
+}
+
+impl<T: ?Sized, R> Debug for Mutex<T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str(&format!("Mutex<{}>", std::any::type_name::<T>()))
+	}
+}
+
+impl<T, R: RawMutex> From<T> for Mutex<T, R> {
+	fn from(value: T) -> Self {
+		Self::new(value)
+	}
+}
+
+impl<T: ?Sized, R> AsMut<T> for Mutex<T, R> {
+	fn as_mut(&mut self) -> &mut T {
+		self.get_mut()
 	}
 }
 
@@ -134,7 +155,8 @@ impl<T, R> Mutex<T, R> {
 	///
 	/// let mutex = Mutex::new(0);
 	/// assert_eq!(mutex.into_inner(), 0);
-	/// ````
+	/// ```
+	#[must_use]
 	pub fn into_inner(self) -> T {
 		self.value.into_inner()
 	}
@@ -155,7 +177,8 @@ impl<T: ?Sized, R> Mutex<T, R> {
 	/// let mut mutex = Mutex::new(0);
 	/// *mutex.get_mut() = 10;
 	/// assert_eq!(*mutex.lock(key), 10);
-	/// ````
+	/// ```
+	#[must_use]
 	pub fn get_mut(&mut self) -> &mut T {
 		self.value.get_mut()
 	}
@@ -283,4 +306,4 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 }
 
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<T, R> {}
-unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<T, R> {}
+unsafe impl<R: RawMutex + Sync, T: ?Sized + Send + Sync> Sync for Mutex<T, R> {}
