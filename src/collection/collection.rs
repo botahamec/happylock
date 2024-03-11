@@ -26,13 +26,13 @@ impl<'a, L: OwnedLockable<'a>> From<L> for LockCollection<L> {
 
 impl<'a, L: OwnedLockable<'a>> AsRef<L> for LockCollection<L> {
 	fn as_ref(&self) -> &L {
-		&self.collection
+		&self.data
 	}
 }
 
 impl<'a, L: OwnedLockable<'a>> AsMut<L> for LockCollection<L> {
 	fn as_mut(&mut self) -> &mut L {
-		&mut self.collection
+		&mut self.data
 	}
 }
 
@@ -53,7 +53,7 @@ impl<L: IntoIterator> IntoIterator for LockCollection<L> {
 	type IntoIter = L::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.collection.into_iter()
+		self.data.into_iter()
 	}
 }
 
@@ -65,7 +65,7 @@ where
 	type IntoIter = <&'a L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.collection.into_iter()
+		self.data.into_iter()
 	}
 }
 
@@ -77,7 +77,7 @@ where
 	type IntoIter = <&'a mut L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.collection.into_iter()
+		self.data.into_iter()
 	}
 }
 
@@ -92,7 +92,7 @@ impl<'a, L: OwnedLockable<'a>, I: FromIterator<L> + OwnedLockable<'a>> FromItera
 
 impl<'a, E: OwnedLockable<'a> + Extend<L>, L: OwnedLockable<'a>> Extend<L> for LockCollection<E> {
 	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
-		self.collection.extend(iter)
+		self.data.extend(iter)
 	}
 }
 
@@ -101,18 +101,35 @@ impl<'a, L: OwnedLockable<'a>> LockCollection<L> {
 	///
 	/// Because the locks are owned, there's no need to do any checks for
 	/// duplicate values.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex};
+	///
+	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	/// ```
 	#[must_use]
-	pub const fn new(collection: L) -> Self {
-		Self { collection }
+	pub const fn new(data: L) -> Self {
+		Self { data }
 	}
 
 	/// Creates a new collection of owned locks.
 	///
 	/// Because the locks are owned, there's no need to do any checks for
 	/// duplicate values.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex};
+	///
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = LockCollection::new_ref(&data);
+	/// ```
 	#[must_use]
-	pub const fn new_ref(collection: &L) -> LockCollection<&L> {
-		LockCollection { collection }
+	pub const fn new_ref(data: &L) -> LockCollection<&L> {
+		LockCollection { data }
 	}
 }
 
@@ -123,9 +140,21 @@ impl<L> LockCollection<L> {
 	///
 	/// This results in undefined behavior if any locks are presented twice
 	/// within this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex};
+	///
+	/// let data1 = Mutex::new(0);
+	/// let data2 = Mutex::new("");
+	///
+	/// // safety: data1 and data2 refer to distinct mutexes
+	/// let lock = unsafe { LockCollection::new_unchecked((&data1, &data2)) };
+	/// ```
 	#[must_use]
-	pub const unsafe fn new_unchecked(collection: L) -> Self {
-		Self { collection }
+	pub const unsafe fn new_unchecked(data: L) -> Self {
+		Self { data }
 	}
 }
 
@@ -140,37 +169,84 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// This does a check at runtime to make sure that the collection contains
 	/// no two copies of the same lock. This is an `O(n^2)` operation. Prefer
 	/// [`LockCollection::new`] or [`LockCollection::new_ref`] instead.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex};
+	///
+	/// let data1 = Mutex::new(0);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let lock = LockCollection::try_new((&data1, &data2)).unwrap();
+	/// ```
 	#[must_use]
-	pub fn try_new(collection: L) -> Option<Self> {
-		let ptrs = collection.get_ptrs();
+	pub fn try_new(data: L) -> Option<Self> {
+		let ptrs = data.get_ptrs();
 		if contains_duplicates(&ptrs) {
 			return None;
 		}
 
-		Some(Self { collection })
+		Some(Self { data })
 	}
 
-	/// Locks the lockable type and returns a guard that can be used to access
-	/// the underlying data.
+	/// Locks the collection
+	///
+	/// This function returns a guard that can be used to access the underlying
+	/// data. When the guard is dropped, the locks in the collection are also
+	/// dropped.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex, ThreadKey};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	///
+	/// let mut guard = lock.lock(key);
+	/// *guard.0 += 1;
+	/// *guard.1 = "1";
+	/// ```
 	pub fn lock<'key: 'a, Key: Keyable + 'key>(&'a self, key: Key) -> LockGuard<'a, 'key, L, Key> {
 		LockGuard {
 			// safety: we have the thread's key
-			guard: unsafe { self.collection.lock() },
+			guard: unsafe { self.data.lock() },
 			key,
 			_phantom: PhantomData,
 		}
 	}
 
-	/// Attempts to lock the guard without blocking.
+	/// Attempts to lock the without blocking.
 	///
 	/// If successful, this method returns a guard that can be used to access
-	/// the data. Otherwise, `None` is returned.
+	/// the data, and unlocks the data when it is dropped. Otherwise, `None` is
+	/// returned.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex, ThreadKey};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	///
+	/// match lock.try_lock(key) {
+	///     Some(mut guard) => {
+	///         *guard.0 += 1;
+	///         *guard.1 = "1";
+	///     },
+	///     None => unreachable!(),
+	/// };
+	///
+	/// ```
 	pub fn try_lock<'key: 'a, Key: Keyable + 'key>(
 		&'a self,
 		key: Key,
 	) -> Option<LockGuard<'a, 'key, L, Key>> {
 		// safety: we have the thread's key
-		unsafe { self.collection.try_lock() }.map(|guard| LockGuard {
+		unsafe { self.data.try_lock() }.map(|guard| LockGuard {
 			guard,
 			key,
 			_phantom: PhantomData,
@@ -179,6 +255,20 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 
 	/// Unlocks the underlying lockable data type, returning the key that's
 	/// associated with it.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{LockCollection, Mutex, ThreadKey};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	///
+	/// let mut guard = lock.lock(key);
+	/// *guard.0 += 1;
+	/// *guard.1 = "1";
+	/// let key = LockCollection::unlock(guard);
+	/// ```
 	#[allow(clippy::missing_const_for_fn)]
 	pub fn unlock<'key: 'a, Key: Keyable + 'key>(guard: LockGuard<'a, 'key, L, Key>) -> Key {
 		drop(guard.guard);

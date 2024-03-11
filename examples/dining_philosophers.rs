@@ -46,7 +46,7 @@ struct Philosopher {
 
 impl Philosopher {
 	fn cycle(&self) {
-		let key = ThreadKey::lock().unwrap();
+		let key = ThreadKey::get().unwrap();
 		thread::sleep(Duration::from_secs(1));
 
 		// safety: no philosopher asks for the same fork twice

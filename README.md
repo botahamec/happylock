@@ -24,7 +24,7 @@ let data: Mutex<i32> = Mutex::new(0);
 for _ in 0..N {
 	thread::spawn(move || {
 		// each thread gets one thread key
-		let key = ThreadKey::lock().unwrap();
+		let key = ThreadKey::get().unwrap();
 
 		// unlocking a mutex requires a ThreadKey
 		let mut data = data.lock(key);
@@ -34,7 +34,7 @@ for _ in 0..N {
 	});
 }
 
-let key = ThreadKey::lock().unwrap();
+let key = ThreadKey::get().unwrap();
 let data = data.lock(&mut key);
 println!("{}", *data);
 ```
@@ -49,7 +49,7 @@ static DATA_2: Mutex<String> = Mutex::new(String::new());
 
 for _ in 0..N {
 	thread::spawn(move || {
-		let key = ThreadKey::lock().unwrap();
+		let key = ThreadKey::get().unwrap();
 
 		// happylock ensures at runtime there are no duplicate locks
 		let collection = LockCollection::try_new((&DATA_1, &DATA_2)).unwrap();
@@ -60,7 +60,7 @@ for _ in 0..N {
 	});
 }
 
-let key = ThreadKey::lock().unwrap();
+let key = ThreadKey::get().unwrap();
 let data = (&DATA_1, &DATA_2);
 let data = LockGuard::lock(&data, &mut key);
 println!("{}", *data.0);
@@ -69,7 +69,7 @@ println!("{}", *data.1);
 
 ## Performance
 
-**The `ThreadKey` is a mostly-zero cost abstraction.** It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::lock()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
+**The `ThreadKey` is a mostly-zero cost abstraction.** It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::get()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
 
 **Avoid `LockCollection::try_new`.** This constructor will check to make sure that the collection contains no duplicate locks. This is an O(n^2) operation, where n is the number of locks in the collection. `LockCollection::new` and `LockCollection::new_ref` don't need these checks because they use `OwnedLockable`, which is guaranteed to be unique as long as it is accessible. As a last resort, `LockCollection::new_unchecked` doesn't do this check, but is unsafe to call.
 
@@ -78,6 +78,8 @@ println!("{}", *data.1);
 ## Future Work
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow. A more fair system for getting sets of locks would help, but I have no clue what that looks like.
+
+It might to possible to break the `ThreadKey` system by having two crates import this crate and call `ThreadKey::get`. I'm not quite sure how this works, but Rust could decide to give each crate their own key, ergo one thread would get two keys. I don't think the standard library would have this issue. At a certain point, I have to recognize that someone could also just import the standard library mutex and get a deadlock that way.
 
 We should add `Condvar` at some point. I didn't because I've never used it before, and I'm probably not the right person to solve this problem. I think all the synchronization problems could be solved by having `Condvar::wait` take a `ThreadKey` instead of a `MutexGuard`. Something similar can probably be done for `Barrier`. But again, I'm no expert.
 

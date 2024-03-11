@@ -14,7 +14,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> Deref for RwLockWriteRef<'a, T, R> {
 		// safety: this is the only type that can use `value`, and there's
 		//         a reference to this type, so there cannot be any mutable
 		//         references to this value.
-		unsafe { &*self.0.value.get() }
+		unsafe { &*self.0.data.get() }
 	}
 }
 
@@ -23,7 +23,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> DerefMut for RwLockWriteRef<'a, T, R> {
 		// safety: this is the only type that can use `value`, and we have a
 		//         mutable reference to this type, so there cannot be any other
 		//         references to this value.
-		unsafe { &mut *self.0.value.get() }
+		unsafe { &mut *self.0.data.get() }
 	}
 }
 

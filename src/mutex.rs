@@ -33,7 +33,7 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 /// [`ThreadKey`]: `crate::ThreadKey`
 pub struct Mutex<T: ?Sized, R> {
 	raw: R,
-	value: UnsafeCell<T>,
+	data: UnsafeCell<T>,
 }
 
 /// A reference to a mutex that unlocks it when dropped

@@ -12,10 +12,10 @@ mod guard;
 /// important that no duplicate locks are included within.
 #[derive(Debug, Clone, Copy)]
 pub struct LockCollection<L> {
-	collection: L,
+	data: L,
 }
 
-/// A guard for a generic [`Lockable`] type.
+/// A RAII guard for a generic [`Lockable`] type.
 pub struct LockGuard<'a, 'key: 'a, L: Lockable<'a>, Key: Keyable + 'key> {
 	guard: L::Output,
 	key: Key,

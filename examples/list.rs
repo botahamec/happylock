@@ -29,7 +29,7 @@ fn main() {
 	let mut threads = Vec::new();
 	for _ in 0..N {
 		let th = thread::spawn(move || {
-			let mut key = ThreadKey::lock().unwrap();
+			let mut key = ThreadKey::get().unwrap();
 			loop {
 				let mut data = Vec::new();
 				for _ in 0..3 {
@@ -55,7 +55,7 @@ fn main() {
 		_ = th.join();
 	}
 
-	let key = ThreadKey::lock().unwrap();
+	let key = ThreadKey::get().unwrap();
 	let data = LockCollection::new_ref(&DATA);
 	let data = data.lock(key);
 	for val in &*data {

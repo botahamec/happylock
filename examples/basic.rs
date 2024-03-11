@@ -10,7 +10,7 @@ fn main() {
 	let mut threads = Vec::new();
 	for _ in 0..N {
 		let th = thread::spawn(move || {
-			let key = ThreadKey::lock().unwrap();
+			let key = ThreadKey::get().unwrap();
 			let mut data = DATA.lock(key);
 			*data += 1;
 		});
@@ -21,7 +21,7 @@ fn main() {
 		_ = th.join();
 	}
 
-	let key = ThreadKey::lock().unwrap();
+	let key = ThreadKey::get().unwrap();
 	let data = DATA.lock(key);
 	println!("{}", *data);
 }

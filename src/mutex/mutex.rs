@@ -18,10 +18,10 @@ impl<T, R: RawMutex> Mutex<T, R> {
 	/// let mutex = Mutex::new(0);
 	/// ```
 	#[must_use]
-	pub const fn new(value: T) -> Self {
+	pub const fn new(data: T) -> Self {
 		Self {
 			raw: R::INIT,
-			value: UnsafeCell::new(value),
+			data: UnsafeCell::new(data),
 		}
 	}
 }
@@ -79,7 +79,7 @@ impl<T, R> Mutex<T, R> {
 	/// ```
 	#[must_use]
 	pub fn into_inner(self) -> T {
-		self.value.into_inner()
+		self.data.into_inner()
 	}
 }
 
@@ -94,14 +94,14 @@ impl<T: ?Sized, R> Mutex<T, R> {
 	/// ```
 	/// use happylock::{ThreadKey, Mutex};
 	///
-	/// let key = ThreadKey::lock().unwrap();
+	/// let key = ThreadKey::get().unwrap();
 	/// let mut mutex = Mutex::new(0);
 	/// *mutex.get_mut() = 10;
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
 	#[must_use]
 	pub fn get_mut(&mut self) -> &mut T {
-		self.value.get_mut()
+		self.data.get_mut()
 	}
 }
 
@@ -122,11 +122,11 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let c_mutex = Arc::clone(&mutex);
 	///
 	/// thread::spawn(move || {
-	///     let key = ThreadKey::lock().unwrap();
+	///     let key = ThreadKey::get().unwrap();
 	///     *c_mutex.lock(key) = 10;
 	/// }).join().expect("thread::spawn failed");
 	///
-	/// let key = ThreadKey::lock().unwrap();
+	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
 	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'_, 'k, T, Key, R> {
@@ -163,7 +163,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let c_mutex = Arc::clone(&mutex);
 	///
 	/// thread::spawn(move || {
-	///     let key = ThreadKey::lock().unwrap();
+	///     let key = ThreadKey::get().unwrap();
 	///     let mut lock = c_mutex.try_lock(key);
 	///     if let Some(mut lock) = lock {
 	///         *lock = 10;
@@ -172,7 +172,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	///     }
 	/// }).join().expect("thread::spawn failed");
 	///
-	/// let key = ThreadKey::lock().unwrap();
+	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
 	pub fn try_lock<'s, 'a: 's, 'k: 'a, Key: Keyable>(
@@ -210,7 +210,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// ```
 	/// use happylock::{ThreadKey, Mutex};
 	///
-	/// let key = ThreadKey::lock().unwrap();
+	/// let key = ThreadKey::get().unwrap();
 	/// let mutex = Mutex::new(0);
 	///
 	/// let mut guard = mutex.lock(key);

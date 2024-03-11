@@ -14,7 +14,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> Deref for RwLockReadRef<'a, T, R> {
 		// safety: this is the only type that can use `value`, and there's
 		//         a reference to this type, so there cannot be any mutable
 		//         references to this value.
-		unsafe { &*self.0.value.get() }
+		unsafe { &*self.0.data.get() }
 	}
 }
 

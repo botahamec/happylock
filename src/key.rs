@@ -20,7 +20,7 @@ static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 /// The key for the current thread.
 ///
 /// Only one of these exist per thread. To get the current thread's key, call
-/// [`ThreadKey::lock`]. If the `ThreadKey` is dropped, it can be reobtained.
+/// [`ThreadKey::get`]. If the `ThreadKey` is dropped, it can be reobtained.
 pub struct ThreadKey {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
 }
@@ -54,20 +54,20 @@ impl ThreadKey {
 	/// The first time this is called, it will successfully return a
 	/// `ThreadKey`. However, future calls to this function on the same thread
 	/// will return [`None`], unless the key is dropped or unlocked first.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::ThreadKey;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// ```
 	#[must_use]
-	pub fn lock() -> Option<Self> {
+	pub fn get() -> Option<Self> {
 		// safety: we just acquired the lock
 		KEY.get_or_default().try_lock().then_some(Self {
 			phantom: PhantomData,
 		})
-	}
-
-	/// Unlocks the `ThreadKey`.
-	///
-	/// After this method is called, a call to [`ThreadKey::lock`] will return
-	/// this `ThreadKey`.
-	pub fn unlock(self) {
-		drop(self);
 	}
 }
 
