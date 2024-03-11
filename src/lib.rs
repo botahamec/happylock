@@ -37,7 +37,7 @@
 //! [`LockCollection::new_unchecked`] doesn't do this check, but is unsafe to
 //! call.
 //!
-//! **Avoid using distinct lock orders for `LockCollection`.** The problem is
+//! **Avoid using distinct lock orders for [`LockCollection`].** The problem is
 //! that this library must iterate through the list of locks, and not complete
 //! until every single one of them is unlocked. This also means that attempting
 //! to lock multiple mutexes gives you a lower chance of ever running. Only one
@@ -103,7 +103,6 @@
 //! let data = data.lock(key);
 //! println!("{}", *data.0);
 //! println!("{}", *data.1);
-//! ```
 //! ```
 
 mod collection;
