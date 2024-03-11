@@ -41,7 +41,7 @@ println!("{}", *data);
 
 Unlocking a mutex requires a `ThreadKey` or a mutable reference to `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. This means that only one thing can be locked at a time.
 
-To lock multiple mutexes at a time, create a `LockSequence` or `LockCollection`.
+To lock multiple mutexes at a time, create a `LockCollection`.
 
 ```rust
 static DATA_1: Mutex<i32> = Mutex::new(0);
