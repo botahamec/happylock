@@ -17,9 +17,31 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 	}
 }
 
-impl<T: ?Sized, R> Debug for RwLock<T, R> {
+impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
+	fn default() -> Self {
+		Self::new(T::default())
+	}
+}
+
+impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_str(&format!("RwLock<{}>", std::any::type_name::<T>()))
+		// safety: this is just a try lock, and the value is dropped
+		//         immediately after, so there's no risk of blocking ourselves
+		//         or any other threads
+		if let Some(value) = unsafe { self.try_read_no_key() } {
+			f.debug_struct("RwLock").field("data", &&*value).finish()
+		} else {
+			struct LockedPlaceholder;
+			impl Debug for LockedPlaceholder {
+				fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+					f.write_str("<locked>")
+				}
+			}
+
+			f.debug_struct("RwLock")
+				.field("data", &LockedPlaceholder)
+				.finish()
+		}
 	}
 }
 

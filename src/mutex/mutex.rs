@@ -26,9 +26,31 @@ impl<T, R: RawMutex> Mutex<T, R> {
 	}
 }
 
-impl<T: ?Sized, R> Debug for Mutex<T, R> {
+impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
+	fn default() -> Self {
+		Self::new(T::default())
+	}
+}
+
+impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_str(&format!("Mutex<{}>", std::any::type_name::<T>()))
+		// safety: this is just a try lock, and the value is dropped
+		//         immediately after, so there's no risk of blocking ourselves
+		//         or any other threads
+		if let Some(value) = unsafe { self.try_lock_no_key() } {
+			f.debug_struct("Mutex").field("data", &&*value).finish()
+		} else {
+			struct LockedPlaceholder;
+			impl Debug for LockedPlaceholder {
+				fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+					f.write_str("<locked>")
+				}
+			}
+
+			f.debug_struct("Mutex")
+				.field("data", &LockedPlaceholder)
+				.finish()
+		}
 	}
 }
 
