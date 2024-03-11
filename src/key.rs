@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
 
-use self::sealed::Sealed;
-use super::ThreadKey;
+use sealed::Sealed;
 
 mod sealed {
-	use crate::ThreadKey;
+	use super::ThreadKey;
+
 	pub trait Sealed {}
 	impl Sealed for ThreadKey {}
 	impl Sealed for &mut ThreadKey {}
@@ -17,10 +17,12 @@ mod sealed {
 
 static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 
-/// A key that can be obtained and dropped
-pub struct Key<'a> {
+/// The key for the current thread.
+///
+/// Only one of these exist per thread. To get the current thread's key, call
+/// [`ThreadKey::lock`]. If the `ThreadKey` is dropped, it can be reobtained.
+pub struct ThreadKey {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
-	lock: &'a AtomicLock,
 }
 
 /// Allows the type to be used as a key for a lock
@@ -40,9 +42,9 @@ impl Debug for ThreadKey {
 	}
 }
 
-impl<'a> Drop for Key<'a> {
+impl Drop for ThreadKey {
 	fn drop(&mut self) {
-		unsafe { self.lock.force_unlock() }
+		unsafe { KEY.get().unwrap().force_unlock() }
 	}
 }
 
@@ -50,19 +52,22 @@ impl ThreadKey {
 	/// Get the current thread's `ThreadKey`, if it's not already taken.
 	///
 	/// The first time this is called, it will successfully return a
-	/// `ThreadKey`. However, future calls to this function will return
-	/// [`None`], unless the key is dropped or unlocked first.
+	/// `ThreadKey`. However, future calls to this function on the same thread
+	/// will return [`None`], unless the key is dropped or unlocked first.
 	#[must_use]
 	pub fn lock() -> Option<Self> {
-		KEY.get_or_default().try_lock()
+		// safety: we just acquired the lock
+		KEY.get_or_default().try_lock().then_some(Self {
+			phantom: PhantomData,
+		})
 	}
 
 	/// Unlocks the `ThreadKey`.
 	///
 	/// After this method is called, a call to [`ThreadKey::lock`] will return
 	/// this `ThreadKey`.
-	pub fn unlock(key: Self) {
-		drop(key);
+	pub fn unlock(self) {
+		drop(self);
 	}
 }
 
@@ -73,29 +78,14 @@ struct AtomicLock {
 }
 
 impl AtomicLock {
-	/// Attempt to lock the `AtomicLock`.
-	///
-	/// If the lock is already locked, then this'll return false. If it is
-	/// unlocked, it'll return true. If the lock is currently unlocked, then it
-	/// will be locked after this function is called.
-	///
-	/// This is not a fair lock. It is not recommended to call this function
-	/// repeatedly in a loop.
+	/// Attempt to lock the `AtomicLock`. This is not a fair lock.
 	#[must_use]
-	pub fn try_lock(&self) -> Option<Key> {
-		// safety: we just acquired the lock
-		(!self.is_locked.swap(true, Ordering::Acquire)).then_some(Key {
-			phantom: PhantomData,
-			lock: self,
-		})
+	pub fn try_lock(&'static self) -> bool {
+		!self.is_locked.swap(true, Ordering::Acquire)
 	}
 
-	/// Forcibly unlocks the `AtomicLock`.
-	///
-	/// # Safety
-	///
-	/// This should only be called if the key to the lock has been "lost". That
-	/// means the program no longer has a reference to the key.
+	/// Forcibly unlocks the `AtomicLock`. This should only be called if the
+	/// key to the lock has been "lost".
 	pub unsafe fn force_unlock(&self) {
 		self.is_locked.store(false, Ordering::Release);
 	}

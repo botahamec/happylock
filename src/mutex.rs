@@ -7,7 +7,6 @@ use crate::key::Keyable;
 
 mod guard;
 mod mutex;
-mod mutex_ref;
 
 /// A spinning mutex
 #[cfg(feature = "spin")]

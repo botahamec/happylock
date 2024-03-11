@@ -6,23 +6,18 @@
 #![allow(clippy::module_inception)]
 
 mod collection;
+mod key;
 mod lockable;
 
-pub mod key;
 pub mod mutex;
 pub mod rwlock;
 
 pub use collection::LockCollection;
+pub use key::{Keyable, ThreadKey};
 pub use lockable::{Lockable, OwnedLockable};
 
 #[cfg(feature = "spin")]
 pub use mutex::SpinLock;
-
-/// The key for the current thread.
-///
-/// Only one of these exist per thread. To get the current thread's key, call
-/// [`ThreadKey::lock`]. If the `ThreadKey` is dropped, it can be reobtained.
-pub type ThreadKey = key::Key<'static>;
 
 /// A mutual exclusion primitive useful for protecting shared data, which cannot deadlock.
 ///
