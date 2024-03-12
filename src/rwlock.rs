@@ -83,7 +83,8 @@ pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(&'a RwLock<T, R>);
 pub struct RwLockReadGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
 	rwlock: RwLockReadRef<'a, T, R>,
 	thread_key: Key,
-	_phantom: PhantomData<&'key ()>,
+	_phantom1: PhantomData<&'key ()>,
+	_phantom2: PhantomData<*const ()>,
 }
 
 /// RAII structure used to release the exclusive write access of a lock when
@@ -96,5 +97,6 @@ pub struct RwLockReadGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLoc
 pub struct RwLockWriteGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
 	rwlock: RwLockWriteRef<'a, T, R>,
 	thread_key: Key,
-	_phantom: PhantomData<&'key ()>,
+	_phantom1: PhantomData<&'key ()>,
+	_phantom2: PhantomData<*const ()>,
 }

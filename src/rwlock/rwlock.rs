@@ -370,4 +370,4 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 }
 
 unsafe impl<R: RawRwLock + Send, T: ?Sized + Send> Send for RwLock<T, R> {}
-unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<T, R> {}
+unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send> Sync for RwLock<T, R> {}

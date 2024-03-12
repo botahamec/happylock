@@ -227,4 +227,4 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 }
 
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<T, R> {}
-unsafe impl<R: RawMutex + Sync, T: ?Sized + Send + Sync> Sync for Mutex<T, R> {}
+unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<T, R> {}

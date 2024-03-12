@@ -61,7 +61,15 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> MutexGuard<'a, 'ke
 		Self {
 			mutex: MutexRef(mutex),
 			thread_key,
-			_phantom: PhantomData,
+			_phantom1: PhantomData,
+			_phantom2: PhantomData,
 		}
 	}
+}
+
+unsafe impl<'a, T: ?Sized + 'a, R: RawMutex> Sync for MutexRef<'a, T, R> {}
+
+unsafe impl<'a, 'key: 'a, T: ?Sized + Sync, Key: Keyable + 'key, R: RawMutex> Sync
+	for MutexGuard<'_, 'key, T, Key, R>
+{
 }
