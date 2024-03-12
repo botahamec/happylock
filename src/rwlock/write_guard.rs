@@ -69,9 +69,4 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 	}
 }
 
-unsafe impl<'a, T: ?Sized + 'a, R: RawRwLock> Sync for RwLockWriteRef<'a, T, R> {}
-
-unsafe impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> Sync
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
-{
-}
+unsafe impl<'a, T: ?Sized + 'a, R: RawRwLock + Sync + 'a> Sync for RwLockWriteRef<'a, T, R> {}

@@ -49,6 +49,5 @@ pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(&'a Mutex<T, R>);
 pub struct MutexGuard<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> {
 	mutex: MutexRef<'a, T, R>,
 	thread_key: Key,
-	_phantom1: PhantomData<*const ()>, // implement !Send
 	_phantom2: PhantomData<&'key ()>,
 }
