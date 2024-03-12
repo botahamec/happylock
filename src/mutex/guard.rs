@@ -57,13 +57,13 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> MutexGuard<'a, 'ke
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
 	#[must_use]
-	pub(super) const unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: Key) -> Self {
+	pub(super) unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: Key) -> Self {
 		Self {
-			mutex: MutexRef(mutex),
+			mutex: MutexRef(mutex, PhantomData),
 			thread_key,
 			_phantom2: PhantomData,
 		}
 	}
 }
 
-unsafe impl<'a, T: ?Sized + Send + 'a, R: RawMutex + Sync + 'a> Sync for MutexRef<'a, T, R> {}
+unsafe impl<'a, T: ?Sized + Sync + 'a, R: RawMutex + Sync + 'a> Sync for MutexRef<'a, T, R> {}

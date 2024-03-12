@@ -59,14 +59,13 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
 	#[must_use]
-	pub(super) const unsafe fn new(rwlock: &'a RwLock<T, R>, thread_key: Key) -> Self {
+	pub(super) unsafe fn new(rwlock: &'a RwLock<T, R>, thread_key: Key) -> Self {
 		Self {
-			rwlock: RwLockWriteRef(rwlock),
+			rwlock: RwLockWriteRef(rwlock, PhantomData),
 			thread_key,
 			_phantom1: PhantomData,
-			_phantom2: PhantomData,
 		}
 	}
 }
 
-unsafe impl<'a, T: ?Sized + 'a, R: RawRwLock + Sync + 'a> Sync for RwLockWriteRef<'a, T, R> {}
+unsafe impl<'a, T: ?Sized + Sync + 'a, R: RawRwLock + Sync + 'a> Sync for RwLockWriteRef<'a, T, R> {}

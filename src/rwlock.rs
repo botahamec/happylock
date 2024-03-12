@@ -67,10 +67,16 @@ pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
 pub struct WriteLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
 
 /// RAII structure that unlocks the shared read access to a [`RwLock`]
-pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(&'a RwLock<T, R>);
+pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(
+	&'a RwLock<T, R>,
+	PhantomData<(&'a mut T, R::GuardMarker)>,
+);
 
 /// RAII structure that unlocks the exclusive write access to a [`RwLock`]
-pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(&'a RwLock<T, R>);
+pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
+	&'a RwLock<T, R>,
+	PhantomData<(&'a mut T, R::GuardMarker)>,
+);
 
 /// RAII structure used to release the shared read access of a lock when
 /// dropped.
@@ -84,7 +90,6 @@ pub struct RwLockReadGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLoc
 	rwlock: RwLockReadRef<'a, T, R>,
 	thread_key: Key,
 	_phantom1: PhantomData<&'key ()>,
-	_phantom2: PhantomData<*const ()>,
 }
 
 /// RAII structure used to release the exclusive write access of a lock when
@@ -98,5 +103,4 @@ pub struct RwLockWriteGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLo
 	rwlock: RwLockWriteRef<'a, T, R>,
 	thread_key: Key,
 	_phantom1: PhantomData<&'key ()>,
-	_phantom2: PhantomData<*const ()>,
 }

@@ -37,7 +37,10 @@ pub struct Mutex<T: ?Sized, R> {
 }
 
 /// A reference to a mutex that unlocks it when dropped
-pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(&'a Mutex<T, R>);
+pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
+	&'a Mutex<T, R>,
+	PhantomData<(&'a mut T, R::GuardMarker)>,
+);
 
 /// An RAII implementation of a “scoped lock” of a mutex. When this structure
 /// is dropped (falls out of scope), the lock will be unlocked.

@@ -1,5 +1,5 @@
-use std::cell::UnsafeCell;
 use std::fmt::Debug;
+use std::{cell::UnsafeCell, marker::PhantomData};
 
 use lock_api::RawRwLock;
 
@@ -161,7 +161,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		self.raw.lock_shared();
 
 		// safety: the lock is locked first
-		RwLockReadRef(self)
+		RwLockReadRef(self, PhantomData)
 	}
 
 	/// Attempts to acquire this `RwLock` with shared read access without
@@ -203,7 +203,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub(crate) unsafe fn try_read_no_key(&self) -> Option<RwLockReadRef<'_, T, R>> {
 		if self.raw.try_lock_shared() {
 			// safety: the lock is locked first
-			Some(RwLockReadRef(self))
+			Some(RwLockReadRef(self, PhantomData))
 		} else {
 			None
 		}
@@ -252,7 +252,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		self.raw.lock_exclusive();
 
 		// safety: the lock is locked first
-		RwLockWriteRef(self)
+		RwLockWriteRef(self, PhantomData)
 	}
 
 	/// Attempts to lock this `RwLock` with exclusive write access.
@@ -295,7 +295,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub(crate) unsafe fn try_write_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
 		if self.raw.try_lock_exclusive() {
 			// safety: the lock is locked first
-			Some(RwLockWriteRef(self))
+			Some(RwLockWriteRef(self, PhantomData))
 		} else {
 			None
 		}

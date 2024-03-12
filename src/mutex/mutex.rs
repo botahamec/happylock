@@ -1,5 +1,5 @@
-use std::cell::UnsafeCell;
 use std::fmt::Debug;
+use std::{cell::UnsafeCell, marker::PhantomData};
 
 use lock_api::RawMutex;
 
@@ -144,7 +144,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	pub(crate) unsafe fn lock_no_key(&self) -> MutexRef<'_, T, R> {
 		self.raw.lock();
 
-		MutexRef(self)
+		MutexRef(self, PhantomData)
 	}
 
 	/// Attempts to lock the `Mutex` without blocking.
@@ -190,7 +190,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// Lock without a [`ThreadKey`]. It is undefined behavior to do this without
 	/// owning the [`ThreadKey`].
 	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<MutexRef<'_, T, R>> {
-		self.raw.try_lock().then_some(MutexRef(self))
+		self.raw.try_lock().then_some(MutexRef(self, PhantomData))
 	}
 
 	/// Forcibly unlocks the `Lock`.
