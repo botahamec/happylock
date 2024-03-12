@@ -63,7 +63,7 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 		Self {
 			rwlock: RwLockWriteRef(rwlock, PhantomData),
 			thread_key,
-			_phantom1: PhantomData,
+			_phantom: PhantomData,
 		}
 	}
 }

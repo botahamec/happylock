@@ -61,7 +61,7 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> MutexGuard<'a, 'ke
 		Self {
 			mutex: MutexRef(mutex, PhantomData),
 			thread_key,
-			_phantom2: PhantomData,
+			_phantom: PhantomData,
 		}
 	}
 }

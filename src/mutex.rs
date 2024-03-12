@@ -52,5 +52,29 @@ pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
 pub struct MutexGuard<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> {
 	mutex: MutexRef<'a, T, R>,
 	thread_key: Key,
-	_phantom2: PhantomData<&'key ()>,
+	_phantom: PhantomData<&'key ()>,
+}
+
+struct MutexLockFuture<'a, T: ?Sized + 'a, R: RawMutex> {
+	mutex: &'a Mutex<T, R>,
+	key: Option<crate::ThreadKey>,
+}
+
+impl<'a, T: ?Sized + 'a, R: RawMutex> std::future::Future for MutexLockFuture<'a, T, R> {
+	type Output = MutexGuard<'a, 'a, T, crate::ThreadKey, R>;
+
+	fn poll(
+		mut self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Self::Output> {
+		match unsafe { self.mutex.try_lock_no_key() } {
+			Some(guard) => std::task::Poll::Ready(unsafe {
+				MutexGuard::new(guard.0, self.key.take().unwrap())
+			}),
+			None => {
+				cx.waker().wake_by_ref();
+				std::task::Poll::Pending
+			}
+		}
+	}
 }
