@@ -4,6 +4,7 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::semicolon_if_nothing_returned)]
 #![allow(clippy::module_inception)]
+#![allow(clippy::single_match_else)]
 
 //! As it turns out, the Rust borrow checker is powerful enough that, if the
 //! standard library supported it, we could've made deadlocks undefined

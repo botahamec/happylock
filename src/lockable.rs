@@ -494,6 +494,7 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 			}
 		}
 
+		let mut first_idx = 0;
 		'outer: loop {
 			let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
 			if N == 0 {
@@ -501,12 +502,18 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 			}
 
 			outputs[0].write(self[0].lock());
-			for i in 1..N {
-				if let Some(guard) = self[i].try_lock() {
-					outputs[i].write(guard)
-				} else {
-					unlock_partial::<T, N>(outputs, i);
-					continue 'outer;
+			for i in 0..N {
+				if first_idx == i {
+					continue;
+				}
+
+				match self[i].try_lock() {
+					Some(guard) => outputs[i].write(guard),
+					None => {
+						unlock_partial::<T, N>(outputs, i);
+						first_idx = i;
+						continue 'outer;
+					}
 				};
 			}
 
@@ -529,11 +536,12 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 
 		let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
 		for i in 0..N {
-			if let Some(guard) = self[i].try_lock() {
-				outputs[i].write(guard)
-			} else {
-				unlock_partial::<T, N>(outputs, i);
-				return None;
+			match self[i].try_lock() {
+				Some(guard) => outputs[i].write(guard),
+				None => {
+					unlock_partial::<T, N>(outputs, i);
+					return None;
+				}
 			};
 		}
 
@@ -553,18 +561,28 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
+		let mut first_idx = 0;
+		if self.is_empty() {
+			return Box::new([]);
+		}
+
 		'outer: loop {
 			let mut outputs = Vec::with_capacity(self.len());
-			if self.is_empty() {
-				return outputs.into_boxed_slice();
-			}
 
-			outputs.push(self[0].lock());
-			for lock in self.iter().skip(1) {
-				if let Some(guard) = lock.try_lock() {
-					outputs.push(guard);
-				} else {
-					continue 'outer;
+			outputs.push(self[first_idx].lock());
+			for (idx, lock) in self.iter().enumerate() {
+				if first_idx == idx {
+					continue;
+				}
+
+				match lock.try_lock() {
+					Some(guard) => {
+						outputs.push(guard);
+					}
+					None => {
+						first_idx = idx;
+						continue 'outer;
+					}
 				};
 			}
 
@@ -575,10 +593,11 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		let mut outputs = Vec::with_capacity(self.len());
 		for lock in &**self {
-			if let Some(guard) = lock.try_lock() {
-				outputs.push(guard);
-			} else {
-				return None;
+			match lock.try_lock() {
+				Some(guard) => {
+					outputs.push(guard);
+				}
+				None => return None,
 			};
 		}
 
@@ -598,18 +617,28 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
+		let mut first_idx = 0;
+		if self.is_empty() {
+			return Vec::new();
+		}
+
 		'outer: loop {
 			let mut outputs = Vec::with_capacity(self.len());
-			if self.is_empty() {
-				return outputs;
-			}
 
-			outputs.push(self[0].lock());
-			for lock in self.iter().skip(1) {
-				if let Some(guard) = lock.try_lock() {
-					outputs.push(guard);
-				} else {
-					continue 'outer;
+			outputs.push(self[first_idx].lock());
+			for (idx, lock) in self.iter().enumerate() {
+				if first_idx == idx {
+					continue;
+				}
+
+				match lock.try_lock() {
+					Some(guard) => {
+						outputs.push(guard);
+					}
+					None => {
+						first_idx = idx;
+						continue 'outer;
+					}
 				};
 			}
 
@@ -620,10 +649,11 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
 		let mut outputs = Vec::with_capacity(self.len());
 		for lock in self {
-			if let Some(guard) = lock.try_lock() {
-				outputs.push(guard);
-			} else {
-				return None;
+			match lock.try_lock() {
+				Some(guard) => {
+					outputs.push(guard);
+				}
+				None => return None,
 			};
 		}
 
