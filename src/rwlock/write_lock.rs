@@ -6,9 +6,25 @@ use crate::key::Keyable;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
 
-impl<'a, T: ?Sized, R> Debug for WriteLock<'a, T, R> {
+impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'a, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_str(&format!("WriteLock<{}>", std::any::type_name::<T>()))
+		// safety: this is just a try lock, and the value is dropped
+		//         immediately after, so there's no risk of blocking ourselves
+		//         or any other threads
+		if let Some(value) = unsafe { self.try_lock_no_key() } {
+			f.debug_struct("WriteLock").field("data", &&*value).finish()
+		} else {
+			struct LockedPlaceholder;
+			impl Debug for LockedPlaceholder {
+				fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+					f.write_str("<locked>")
+				}
+			}
+
+			f.debug_struct("ReadLock")
+				.field("data", &LockedPlaceholder)
+				.finish()
+		}
 	}
 }
 
