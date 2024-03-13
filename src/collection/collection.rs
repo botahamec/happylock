@@ -24,25 +24,25 @@ impl<'a, L: OwnedLockable<'a>> From<L> for LockCollection<L> {
 	}
 }
 
-impl<'a, L: OwnedLockable<'a>> AsRef<L> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsRef<L> for LockCollection<L> {
 	fn as_ref(&self) -> &L {
 		&self.data
 	}
 }
 
-impl<'a, L: OwnedLockable<'a>> AsMut<L> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsMut<L> for LockCollection<L> {
 	fn as_mut(&mut self) -> &mut L {
 		&mut self.data
 	}
 }
 
-impl<'a, L: OwnedLockable<'a>> AsRef<Self> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsRef<Self> for LockCollection<L> {
 	fn as_ref(&self) -> &Self {
 		self
 	}
 }
 
-impl<'a, L: OwnedLockable<'a>> AsMut<Self> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsMut<Self> for LockCollection<L> {
 	fn as_mut(&mut self) -> &mut Self {
 		self
 	}
