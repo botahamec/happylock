@@ -75,6 +75,8 @@ println!("{}", *data.1);
 
 **Avoid using distinct lock orders for `LockCollection`.** The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
 
+**Avoid tuples in `LockCollection`.** Tuples become spinlocks if the first value is already unlocked. This will be fixed in the future. For now, if you need a tuple, make the lock that is most likely to be locked the first element.
+
 ## Future Work
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow. A more fair system for getting sets of locks would help, but I have no clue what that looks like.
