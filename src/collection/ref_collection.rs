@@ -4,6 +4,7 @@ use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable};
 
 use super::{LockGuard, RefLockCollection};
 
+#[must_use]
 fn get_locks<'a, L: Lockable<'a> + 'a>(data: &'a L) -> Vec<&'a dyn Lock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);

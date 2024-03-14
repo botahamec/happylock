@@ -1,6 +1,6 @@
 use std::thread;
 
-use happylock::{Mutex, RefLockCollection, ThreadKey};
+use happylock::{collection::RefLockCollection, Mutex, ThreadKey};
 
 const N: usize = 10;
 

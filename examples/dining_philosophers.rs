@@ -1,6 +1,6 @@
 use std::{thread, time::Duration};
 
-use happylock::{Mutex, RefLockCollection, ThreadKey};
+use happylock::{collection::RefLockCollection, Mutex, ThreadKey};
 
 static PHILOSOPHERS: [Philosopher; 5] = [
 	Philosopher {

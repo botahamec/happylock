@@ -1,13 +1,14 @@
-use std::marker::{PhantomData, PhantomPinned};
-use std::ptr::NonNull;
+use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
 	key::Keyable,
 	lockable::{Lock, Lockable},
 };
 
-mod collection;
+mod boxed_collection;
 mod guard;
+mod owned_collection;
+mod ref_collection;
 
 pub struct OwnedLockCollection<L> {
 	data: L,
@@ -22,16 +23,7 @@ pub struct RefLockCollection<'a, L> {
 	data: &'a L,
 }
 
-pub struct BoxedLockCollection<L: 'static>(RefLockCollection<'static, L>);
-
-pub struct PinnedLockCollection<L> {
-	_unpin: PhantomPinned,
-	data: L,
-	locks: Vec<NonNull<dyn Lock>>,
-}
-
-unsafe impl<L: Send> Send for PinnedLockCollection<L> {}
-unsafe impl<L: Sync> Sync for PinnedLockCollection<L> {}
+pub struct BoxedLockCollection<'a, L>(RefLockCollection<'a, L>);
 
 /// A RAII guard for a generic [`Lockable`] type.
 pub struct LockGuard<'a, 'key: 'a, L: Lockable<'a>, Key: Keyable + 'key> {

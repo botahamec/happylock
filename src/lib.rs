@@ -113,7 +113,6 @@ pub mod collection;
 pub mod mutex;
 pub mod rwlock;
 
-pub use collection::RefLockCollection;
 pub use key::{Keyable, ThreadKey};
 pub use lockable::{Lockable, OwnedLockable};
 
