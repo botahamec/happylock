@@ -5,7 +5,7 @@ use crate::{key::Keyable, Lockable};
 use super::LockGuard;
 
 impl<'a, 'key: 'a, L: Lockable<'a>, Key: Keyable> Deref for LockGuard<'a, 'key, L, Key> {
-	type Target = L::Output;
+	type Target = L::Guard;
 
 	fn deref(&self) -> &Self::Target {
 		&self.guard

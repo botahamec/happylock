@@ -1,6 +1,6 @@
 use std::thread;
 
-use happylock::{LockCollection, Mutex, ThreadKey};
+use happylock::{Mutex, RefLockCollection, ThreadKey};
 
 const N: usize = 10;
 
@@ -37,7 +37,7 @@ fn main() {
 					data.push(&DATA[rand % 6]);
 				}
 
-				let Some(lock) = LockCollection::try_new(data) else {
+				let Some(lock) = RefLockCollection::try_new(&data) else {
 					continue;
 				};
 				let mut guard = lock.lock(&mut key);
@@ -56,7 +56,7 @@ fn main() {
 	}
 
 	let key = ThreadKey::get().unwrap();
-	let data = LockCollection::new_ref(&DATA);
+	let data = RefLockCollection::new(&DATA);
 	let data = data.lock(key);
 	for val in &*data {
 		println!("{}", **val);

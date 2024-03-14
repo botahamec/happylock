@@ -35,6 +35,12 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexRef<'a, T, R> {
 	}
 }
 
+impl<'a, T: ?Sized + 'a, R: RawMutex> MutexRef<'a, T, R> {
+	pub unsafe fn new(mutex: &'a Mutex<T, R>) -> Self {
+		Self(mutex, PhantomData)
+	}
+}
+
 impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> Deref
 	for MutexGuard<'a, 'key, T, Key, R>
 {

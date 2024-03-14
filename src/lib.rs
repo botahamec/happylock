@@ -106,14 +106,14 @@
 //! println!("{}", *data.1);
 //! ```
 
-mod collection;
 mod key;
 mod lockable;
 
+pub mod collection;
 pub mod mutex;
 pub mod rwlock;
 
-pub use collection::LockCollection;
+pub use collection::RefLockCollection;
 pub use key::{Keyable, ThreadKey};
 pub use lockable::{Lockable, OwnedLockable};
 

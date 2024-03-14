@@ -67,12 +67,6 @@ impl<'a, T: ?Sized, R: RawRwLock> ReadLock<'a, T, R> {
 		self.0.read(key)
 	}
 
-	/// Creates a shared lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn lock_no_key(&self) -> RwLockReadRef<'_, T, R> {
-		self.0.read_no_key()
-	}
-
 	/// Attempts to acquire the underlying [`RwLock`] with shared read access
 	/// without blocking.
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(

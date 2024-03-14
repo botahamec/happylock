@@ -1,63 +1,43 @@
 use std::marker::PhantomData;
 
-use crate::{key::Keyable, Lockable, OwnedLockable};
+use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable};
 
-use super::{LockCollection, LockGuard};
+use super::{LockGuard, RefLockCollection};
 
-/// returns `true` if the list contains a duplicate
+fn get_locks<'a, L: Lockable<'a> + 'a>(data: &'a L) -> Vec<&'a dyn Lock> {
+	let mut locks = Vec::new();
+	data.get_ptrs(&mut locks);
+	locks.sort_by_key(|lock| std::ptr::from_ref(*lock));
+	locks
+}
+
+/// returns `true` if the sorted list contains a duplicate
 #[must_use]
-fn contains_duplicates(l: &[usize]) -> bool {
-	for i in 0..l.len() {
-		for j in (i + 1)..l.len() {
-			if l[i] == l[j] {
-				return true;
-			}
-		}
-	}
-
-	false
+fn contains_duplicates(l: &[&dyn Lock]) -> bool {
+	l.windows(2).any(|window| {
+		std::ptr::addr_eq(std::ptr::from_ref(window[0]), std::ptr::from_ref(window[1]))
+	})
 }
 
-impl<'a, L: OwnedLockable<'a>> From<L> for LockCollection<L> {
-	fn from(value: L) -> Self {
-		Self::new(value)
-	}
-}
-
-impl<'a, L: Lockable<'a>> AsRef<L> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsRef<L> for RefLockCollection<'a, L> {
 	fn as_ref(&self) -> &L {
-		&self.data
+		self.data
 	}
 }
 
-impl<'a, L: Lockable<'a>> AsMut<L> for LockCollection<L> {
-	fn as_mut(&mut self) -> &mut L {
-		&mut self.data
-	}
-}
-
-impl<'a, L: Lockable<'a>> AsRef<Self> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsRef<Self> for RefLockCollection<'a, L> {
 	fn as_ref(&self) -> &Self {
 		self
 	}
 }
 
-impl<'a, L: Lockable<'a>> AsMut<Self> for LockCollection<L> {
+impl<'a, L: Lockable<'a>> AsMut<Self> for RefLockCollection<'a, L> {
 	fn as_mut(&mut self) -> &mut Self {
 		self
 	}
 }
 
-impl<L: IntoIterator> IntoIterator for LockCollection<L> {
-	type Item = L::Item;
-	type IntoIter = L::IntoIter;
-
-	fn into_iter(self) -> Self::IntoIter {
-		self.data.into_iter()
-	}
-}
-
-impl<'a, L> IntoIterator for &'a LockCollection<L>
+impl<'a, L> IntoIterator for &'a RefLockCollection<'a, L>
 where
 	&'a L: IntoIterator,
 {
@@ -69,51 +49,7 @@ where
 	}
 }
 
-impl<'a, L> IntoIterator for &'a mut LockCollection<L>
-where
-	&'a mut L: IntoIterator,
-{
-	type Item = <&'a mut L as IntoIterator>::Item;
-	type IntoIter = <&'a mut L as IntoIterator>::IntoIter;
-
-	fn into_iter(self) -> Self::IntoIter {
-		self.data.into_iter()
-	}
-}
-
-impl<'a, L: OwnedLockable<'a>, I: FromIterator<L> + OwnedLockable<'a>> FromIterator<L>
-	for LockCollection<I>
-{
-	fn from_iter<T: IntoIterator<Item = L>>(iter: T) -> Self {
-		let iter: I = iter.into_iter().collect();
-		Self::new(iter)
-	}
-}
-
-impl<'a, E: OwnedLockable<'a> + Extend<L>, L: OwnedLockable<'a>> Extend<L> for LockCollection<E> {
-	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
-		self.data.extend(iter)
-	}
-}
-
-impl<'a, L: OwnedLockable<'a>> LockCollection<L> {
-	/// Creates a new collection of owned locks.
-	///
-	/// Because the locks are owned, there's no need to do any checks for
-	/// duplicate values.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{LockCollection, Mutex};
-	///
-	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
-	/// ```
-	#[must_use]
-	pub const fn new(data: L) -> Self {
-		Self { data }
-	}
-
+impl<'a, L: OwnedLockable<'a> + 'a> RefLockCollection<'a, L> {
 	/// Creates a new collection of owned locks.
 	///
 	/// Because the locks are owned, there's no need to do any checks for
@@ -125,15 +61,18 @@ impl<'a, L: OwnedLockable<'a>> LockCollection<L> {
 	/// use happylock::{LockCollection, Mutex};
 	///
 	/// let data = (Mutex::new(0), Mutex::new(""));
-	/// let lock = LockCollection::new_ref(&data);
+	/// let lock = LockCollection::new(&data);
 	/// ```
 	#[must_use]
-	pub const fn new_ref(data: &L) -> LockCollection<&L> {
-		LockCollection { data }
+	pub fn new(data: &'a L) -> RefLockCollection<L> {
+		RefLockCollection {
+			locks: get_locks(data),
+			data,
+		}
 	}
 }
 
-impl<L> LockCollection<L> {
+impl<'a, L: Lockable<'a>> RefLockCollection<'a, L> {
 	/// Creates a new collections of locks.
 	///
 	/// # Safety
@@ -153,22 +92,17 @@ impl<L> LockCollection<L> {
 	/// let lock = unsafe { LockCollection::new_unchecked((&data1, &data2)) };
 	/// ```
 	#[must_use]
-	pub const unsafe fn new_unchecked(data: L) -> Self {
-		Self { data }
+	pub unsafe fn new_unchecked(data: &'a L) -> Self {
+		Self {
+			data,
+			locks: get_locks(data),
+		}
 	}
-}
 
-impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// Creates a new collection of locks.
 	///
 	/// This returns `None` if any locks are found twice in the given
 	/// collection.
-	///
-	/// # Performance
-	///
-	/// This does a check at runtime to make sure that the collection contains
-	/// no two copies of the same lock. This is an `O(n^2)` operation. Prefer
-	/// [`LockCollection::new`] or [`LockCollection::new_ref`] instead.
 	///
 	/// # Examples
 	///
@@ -182,13 +116,13 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// let lock = LockCollection::try_new((&data1, &data2)).unwrap();
 	/// ```
 	#[must_use]
-	pub fn try_new(data: L) -> Option<Self> {
-		let ptrs = data.get_ptrs();
-		if contains_duplicates(&ptrs) {
+	pub fn try_new(data: &'a L) -> Option<Self> {
+		let locks = get_locks(data);
+		if contains_duplicates(&locks) {
 			return None;
 		}
 
-		Some(Self { data })
+		Some(Self { locks, data })
 	}
 
 	/// Locks the collection
@@ -210,9 +144,14 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// *guard.1 = "1";
 	/// ```
 	pub fn lock<'key: 'a, Key: Keyable + 'key>(&'a self, key: Key) -> LockGuard<'a, 'key, L, Key> {
+		for lock in &self.locks {
+			// safety: we have the thread key
+			unsafe { lock.lock() };
+		}
+
 		LockGuard {
-			// safety: we have the thread's key
-			guard: unsafe { self.data.lock() },
+			// safety: we've already acquired the lock
+			guard: unsafe { self.data.guard() },
 			key,
 			_phantom: PhantomData,
 		}
@@ -245,8 +184,25 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 		&'a self,
 		key: Key,
 	) -> Option<LockGuard<'a, 'key, L, Key>> {
-		// safety: we have the thread's key
-		unsafe { self.data.try_lock() }.map(|guard| LockGuard {
+		let guard = unsafe {
+			for (i, lock) in self.locks.iter().enumerate() {
+				// safety: we have the thread key
+				let success = lock.try_lock();
+
+				if !success {
+					for lock in &self.locks[0..i] {
+						// safety: this lock was already acquired
+						lock.unlock();
+					}
+					return None;
+				}
+			}
+
+			// safety: we've acquired the locks
+			self.data.guard()
+		};
+
+		Some(LockGuard {
 			guard,
 			key,
 			_phantom: PhantomData,
@@ -276,23 +232,13 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	}
 }
 
-impl<'a, L: 'a> LockCollection<L>
+impl<'a, L: 'a> RefLockCollection<'a, L>
 where
 	&'a L: IntoIterator,
 {
 	/// Returns an iterator over references to each value in the collection.
+	#[must_use]
 	pub fn iter(&'a self) -> <&'a L as IntoIterator>::IntoIter {
-		self.into_iter()
-	}
-}
-
-impl<'a, L: 'a> LockCollection<L>
-where
-	&'a mut L: IntoIterator,
-{
-	/// Returns an iterator over mutable references to each value in the
-	/// collection.
-	pub fn iter_mut(&'a mut self) -> <&'a mut L as IntoIterator>::IntoIter {
 		self.into_iter()
 	}
 }

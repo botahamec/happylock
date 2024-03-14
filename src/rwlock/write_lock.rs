@@ -67,12 +67,6 @@ impl<'a, T: ?Sized, R: RawRwLock> WriteLock<'a, T, R> {
 		self.0.write(key)
 	}
 
-	/// Creates an exclusive lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn lock_no_key(&self) -> RwLockWriteRef<'_, T, R> {
-		self.0.write_no_key()
-	}
-
 	/// Attempts to lock the underlying [`RwLock`] with exclusive write access.
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,

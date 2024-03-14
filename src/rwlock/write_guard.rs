@@ -35,6 +35,12 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> Drop for RwLockWriteRef<'a, T, R> {
 	}
 }
 
+impl<'a, T: ?Sized + 'a, R: RawRwLock> RwLockWriteRef<'a, T, R> {
+	pub unsafe fn new(mutex: &'a RwLock<T, R>) -> Self {
+		Self(mutex, PhantomData)
+	}
+}
+
 impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> Deref
 	for RwLockWriteGuard<'a, 'key, T, Key, R>
 {

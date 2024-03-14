@@ -1,6 +1,6 @@
 use std::{thread, time::Duration};
 
-use happylock::{LockCollection, Mutex, ThreadKey};
+use happylock::{Mutex, RefLockCollection, ThreadKey};
 
 static PHILOSOPHERS: [Philosopher; 5] = [
 	Philosopher {
@@ -50,8 +50,8 @@ impl Philosopher {
 		thread::sleep(Duration::from_secs(1));
 
 		// safety: no philosopher asks for the same fork twice
-		let forks =
-			unsafe { LockCollection::new_unchecked([&FORKS[self.left], &FORKS[self.right]]) };
+		let forks = [&FORKS[self.left], &FORKS[self.right]];
+		let forks = unsafe { RefLockCollection::new_unchecked(&forks) };
 		let forks = forks.lock(key);
 		println!("{} is eating...", self.name);
 		thread::sleep(Duration::from_secs(1));

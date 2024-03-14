@@ -24,6 +24,23 @@ impl<T, R: RawMutex> Mutex<T, R> {
 			data: UnsafeCell::new(data),
 		}
 	}
+
+	/// Returns the raw underlying mutex.
+	///
+	/// Note that you will most likely need to import the [`RawMutex`] trait
+	/// from `lock_api` to be able to call functions on the raw mutex.
+	///
+	/// # Safety
+	///
+	/// This method is unsafe because it allows unlocking a mutex while still
+	/// holding a reference to a [`MutexGuard`], and locking a mutex without
+	/// holding the [`ThreadKey`].
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
+	#[must_use]
+	pub const unsafe fn raw(&self) -> &R {
+		&self.raw
+	}
 }
 
 impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
@@ -136,15 +153,6 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 			// safety: we just locked the mutex
 			MutexGuard::new(self, key)
 		}
-	}
-
-	/// Lock without a [`ThreadKey`]. You must exclusively own the
-	/// [`ThreadKey`] as long as the [`MutexRef`] is alive. This may cause
-	/// deadlock if called multiple times without unlocking first.
-	pub(crate) unsafe fn lock_no_key(&self) -> MutexRef<'_, T, R> {
-		self.raw.lock();
-
-		MutexRef(self, PhantomData)
 	}
 
 	/// Attempts to lock the `Mutex` without blocking.

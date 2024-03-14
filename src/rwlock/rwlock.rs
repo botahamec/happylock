@@ -24,6 +24,20 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 			raw: R::INIT,
 		}
 	}
+
+	/// Returns the underlying raw reader-writer lock object.
+	///
+	/// Note that you will most likely need to import the [`RawRwLock`] trait
+	/// from `lock_api` to be able to call functions on the raw reader-writer
+	/// lock.
+	///
+	/// # Safety
+	///
+	/// This method is unsafe because it allows unlocking a mutex while
+	/// still holding a reference to a lock guard.
+	pub const unsafe fn raw(&self) -> &R {
+		&self.raw
+	}
 }
 
 impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
@@ -155,15 +169,6 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		}
 	}
 
-	/// Creates a shared lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn read_no_key(&self) -> RwLockReadRef<'_, T, R> {
-		self.raw.lock_shared();
-
-		// safety: the lock is locked first
-		RwLockReadRef(self, PhantomData)
-	}
-
 	/// Attempts to acquire this `RwLock` with shared read access without
 	/// blocking.
 	///
@@ -244,15 +249,6 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 			// safety: the lock is locked first
 			RwLockWriteGuard::new(self, key)
 		}
-	}
-
-	/// Creates an exclusive lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn write_no_key(&self) -> RwLockWriteRef<'_, T, R> {
-		self.raw.lock_exclusive();
-
-		// safety: the lock is locked first
-		RwLockWriteRef(self, PhantomData)
 	}
 
 	/// Attempts to lock this `RwLock` with exclusive write access.
