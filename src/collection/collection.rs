@@ -6,16 +6,9 @@ use super::{LockCollection, LockGuard};
 
 /// returns `true` if the list contains a duplicate
 #[must_use]
-fn contains_duplicates(l: &[usize]) -> bool {
-	for i in 0..l.len() {
-		for j in (i + 1)..l.len() {
-			if l[i] == l[j] {
-				return true;
-			}
-		}
-	}
-
-	false
+fn contains_duplicates(l: &mut [usize]) -> bool {
+	l.sort_unstable();
+	l.windows(2).any(|w| w[0] == w[1])
 }
 
 impl<'a, L: OwnedLockable<'a>> From<L> for LockCollection<L> {
@@ -183,8 +176,8 @@ impl<'a, L: Lockable<'a>> LockCollection<L> {
 	/// ```
 	#[must_use]
 	pub fn try_new(data: L) -> Option<Self> {
-		let ptrs = data.get_ptrs();
-		if contains_duplicates(&ptrs) {
+		let mut ptrs = data.get_ptrs();
+		if contains_duplicates(&mut ptrs) {
 			return None;
 		}
 
