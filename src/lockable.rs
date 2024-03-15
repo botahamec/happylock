@@ -192,6 +192,8 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
+				drop(lock0);
+				std::thread::yield_now();
 				continue;
 			};
 
@@ -226,9 +228,14 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>> Lockable<'a> 
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
+				drop(lock0);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				std::thread::yield_now();
 				continue;
 			};
 
@@ -269,12 +276,21 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
+				drop(lock0);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock3) = self.3.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				drop(lock2);
+				std::thread::yield_now();
 				continue;
 			};
 
@@ -319,15 +335,29 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
+				drop(lock0);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock3) = self.3.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				drop(lock2);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock4) = self.4.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				drop(lock2);
+				drop(lock3);
+				std::thread::yield_now();
 				continue;
 			};
 
@@ -390,18 +420,38 @@ unsafe impl<
 		loop {
 			let lock0 = self.0.lock();
 			let Some(lock1) = self.1.try_lock() else {
+				drop(lock0);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock2) = self.2.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock3) = self.3.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				drop(lock2);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock4) = self.4.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				drop(lock2);
+				drop(lock3);
+				std::thread::yield_now();
 				continue;
 			};
 			let Some(lock5) = self.5.try_lock() else {
+				drop(lock0);
+				drop(lock1);
+				drop(lock2);
+				drop(lock3);
+				drop(lock4);
+				std::thread::yield_now();
 				continue;
 			};
 
@@ -506,6 +556,7 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 					Some(guard) => outputs[i].write(guard),
 					None => {
 						unlock_partial::<T, N>(outputs, i);
+						std::thread::yield_now();
 						continue 'outer;
 					}
 				};
@@ -569,6 +620,8 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 						outputs.push(guard);
 					}
 					None => {
+						drop(outputs);
+						std::thread::yield_now();
 						continue 'outer;
 					}
 				};
@@ -619,6 +672,8 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 						outputs.push(guard);
 					}
 					None => {
+						drop(outputs);
+						std::thread::yield_now();
 						continue 'outer;
 					}
 				};
