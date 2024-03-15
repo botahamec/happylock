@@ -494,7 +494,6 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 			}
 		}
 
-		let mut first_idx = 0;
 		'outer: loop {
 			let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
 			if N == 0 {
@@ -503,15 +502,10 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 
 			outputs[0].write(self[0].lock());
 			for i in 0..N {
-				if first_idx == i {
-					continue;
-				}
-
 				match self[i].try_lock() {
 					Some(guard) => outputs[i].write(guard),
 					None => {
 						unlock_partial::<T, N>(outputs, i);
-						first_idx = i;
 						continue 'outer;
 					}
 				};
@@ -561,7 +555,6 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		let mut first_idx = 0;
 		if self.is_empty() {
 			return Box::new([]);
 		}
@@ -569,18 +562,13 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 		'outer: loop {
 			let mut outputs = Vec::with_capacity(self.len());
 
-			outputs.push(self[first_idx].lock());
-			for (idx, lock) in self.iter().enumerate() {
-				if first_idx == idx {
-					continue;
-				}
-
+			outputs.push(self[0].lock());
+			for lock in self.iter() {
 				match lock.try_lock() {
 					Some(guard) => {
 						outputs.push(guard);
 					}
 					None => {
-						first_idx = idx;
 						continue 'outer;
 					}
 				};
@@ -617,7 +605,6 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		let mut first_idx = 0;
 		if self.is_empty() {
 			return Vec::new();
 		}
@@ -625,18 +612,13 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 		'outer: loop {
 			let mut outputs = Vec::with_capacity(self.len());
 
-			outputs.push(self[first_idx].lock());
-			for (idx, lock) in self.iter().enumerate() {
-				if first_idx == idx {
-					continue;
-				}
-
+			outputs.push(self[0].lock());
+			for lock in self {
 				match lock.try_lock() {
 					Some(guard) => {
 						outputs.push(guard);
 					}
 					None => {
-						first_idx = idx;
 						continue 'outer;
 					}
 				};
