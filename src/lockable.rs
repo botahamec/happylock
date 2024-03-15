@@ -62,15 +62,15 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &T {
 	type Output = T::Output;
 
 	fn get_ptrs(&self) -> Vec<usize> {
-		(*self).get_ptrs()
+		(**self).get_ptrs()
 	}
 
 	unsafe fn lock(&'a self) -> Self::Output {
-		(*self).lock()
+		(**self).lock()
 	}
 
 	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		(*self).try_lock()
+		(**self).try_lock()
 	}
 }
 
@@ -501,7 +501,7 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 			}
 
 			outputs[0].write(self[0].lock());
-			for i in 0..N {
+			for i in 1..N {
 				match self[i].try_lock() {
 					Some(guard) => outputs[i].write(guard),
 					None => {
@@ -529,7 +529,7 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 		}
 
 		let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
-		for i in 0..N {
+		for i in 1..N {
 			match self[i].try_lock() {
 				Some(guard) => outputs[i].write(guard),
 				None => {
@@ -563,7 +563,7 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 			let mut outputs = Vec::with_capacity(self.len());
 
 			outputs.push(self[0].lock());
-			for lock in self.iter() {
+			for lock in self.iter().skip(1) {
 				match lock.try_lock() {
 					Some(guard) => {
 						outputs.push(guard);
@@ -613,7 +613,7 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 			let mut outputs = Vec::with_capacity(self.len());
 
 			outputs.push(self[0].lock());
-			for lock in self {
+			for lock in self.iter().skip(1) {
 				match lock.try_lock() {
 					Some(guard) => {
 						outputs.push(guard);
