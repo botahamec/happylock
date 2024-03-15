@@ -1,6 +1,6 @@
 [package]
 name = "happylock"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Mica White <botahamec@outlook.com>"]
 edition = "2021"
 description = "Free deadlock prevention"
