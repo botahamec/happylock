@@ -26,7 +26,7 @@ impl<'a, L> Drop for BoxedLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: OwnedLockable<'a> + 'a> BoxedLockCollection<'a, L> {
+impl<'a, L: OwnedLockable> BoxedLockCollection<'a, L> {
 	#[must_use]
 	pub fn new(data: L) -> Self {
 		let boxed = Box::leak(Box::new(data));
@@ -34,18 +34,18 @@ impl<'a, L: OwnedLockable<'a> + 'a> BoxedLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: OwnedLockable<'a> + 'a> BoxedLockCollection<'a, &'a L> {
+impl<'a, L: OwnedLockable> BoxedLockCollection<'a, &'a L> {
 	#[must_use]
 	pub fn new_ref(data: &'a L) -> Self {
 		let boxed = Box::leak(Box::new(data));
 
-		// this is a reference to an OwnedLockable, which can't possibly
-		// contain inner duplicates
+		// safety: this is a reference to an OwnedLockable, which can't
+		//         possibly contain inner duplicates
 		Self(unsafe { RefLockCollection::new_unchecked(boxed) })
 	}
 }
 
-impl<'a, L: Lockable<'a> + 'a> BoxedLockCollection<'a, L> {
+impl<'a, L: Lockable> BoxedLockCollection<'a, L> {
 	#[must_use]
 	pub unsafe fn new_unchecked(data: L) -> Self {
 		let boxed = Box::leak(Box::new(data));

@@ -5,7 +5,7 @@ use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable};
 use super::{LockGuard, RefLockCollection};
 
 #[must_use]
-fn get_locks<'a, L: Lockable<'a> + 'a>(data: &'a L) -> Vec<&'a dyn Lock> {
+fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
 	locks.sort_by_key(|lock| std::ptr::from_ref(*lock));
@@ -20,19 +20,19 @@ fn contains_duplicates(l: &[&dyn Lock]) -> bool {
 	})
 }
 
-impl<'a, L: Lockable<'a>> AsRef<L> for RefLockCollection<'a, L> {
+impl<'a, L: Lockable> AsRef<L> for RefLockCollection<'a, L> {
 	fn as_ref(&self) -> &L {
 		self.data
 	}
 }
 
-impl<'a, L: Lockable<'a>> AsRef<Self> for RefLockCollection<'a, L> {
+impl<'a, L: Lockable> AsRef<Self> for RefLockCollection<'a, L> {
 	fn as_ref(&self) -> &Self {
 		self
 	}
 }
 
-impl<'a, L: Lockable<'a>> AsMut<Self> for RefLockCollection<'a, L> {
+impl<'a, L: Lockable> AsMut<Self> for RefLockCollection<'a, L> {
 	fn as_mut(&mut self) -> &mut Self {
 		self
 	}
@@ -50,7 +50,7 @@ where
 	}
 }
 
-impl<'a, L: OwnedLockable<'a> + 'a> RefLockCollection<'a, L> {
+impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 	/// Creates a new collection of owned locks.
 	///
 	/// Because the locks are owned, there's no need to do any checks for
@@ -73,7 +73,7 @@ impl<'a, L: OwnedLockable<'a> + 'a> RefLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: Lockable<'a>> RefLockCollection<'a, L> {
+impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// Creates a new collections of locks.
 	///
 	/// # Safety
