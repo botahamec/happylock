@@ -4,22 +4,19 @@ use crate::{lockable::Lock, Keyable, Lockable, OwnedLockable};
 
 use super::{LockGuard, OwnedLockCollection};
 
-fn get_locks<'a, L: Lockable<'a> + 'a>(data: &'a L) -> Vec<&'a dyn Lock> {
+fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
 	locks
 }
 
-impl<'a, L: OwnedLockable<'a>> OwnedLockCollection<L> {
+impl<L: OwnedLockable> OwnedLockCollection<L> {
 	#[must_use]
 	pub const fn new(data: L) -> Self {
 		Self { data }
 	}
 
-	pub fn lock<'s: 'a, 'key, Key: Keyable + 'key>(
-		&'s self,
-		key: Key,
-	) -> LockGuard<'a, 'key, L, Key> {
+	pub fn lock<'a, 'key, Key: Keyable + 'key>(&'a self, key: Key) -> LockGuard<'a, 'key, L, Key> {
 		let locks = get_locks(&self.data);
 		for lock in locks {
 			// safety: we have the thread key, and these locks happen in a
@@ -36,7 +33,7 @@ impl<'a, L: OwnedLockable<'a>> OwnedLockCollection<L> {
 		}
 	}
 
-	pub fn try_lock<'key: 'a, Key: Keyable + 'key>(
+	pub fn try_lock<'a, 'key: 'a, Key: Keyable + 'key>(
 		&'a self,
 		key: Key,
 	) -> Option<LockGuard<'a, 'key, L, Key>> {

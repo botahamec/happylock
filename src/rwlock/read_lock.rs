@@ -6,7 +6,7 @@ use crate::key::Keyable;
 
 use super::{ReadLock, RwLock, RwLockReadGuard, RwLockReadRef};
 
-impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'a, T, R> {
+impl<T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -28,19 +28,19 @@ impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'a, T, R> {
 	}
 }
 
-impl<'a, T: ?Sized, R> From<&'a RwLock<T, R>> for ReadLock<'a, T, R> {
-	fn from(value: &'a RwLock<T, R>) -> Self {
+impl<T, R> From<RwLock<T, R>> for ReadLock<T, R> {
+	fn from(value: RwLock<T, R>) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<'a, T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'a, T, R> {
+impl<T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
-		self.0
+		&self.0
 	}
 }
 
-impl<'a, T: ?Sized, R> ReadLock<'a, T, R> {
+impl<T, R> ReadLock<T, R> {
 	/// Creates a new `ReadLock` which accesses the given [`RwLock`]
 	///
 	/// # Examples
@@ -52,12 +52,12 @@ impl<'a, T: ?Sized, R> ReadLock<'a, T, R> {
 	/// let read_lock = ReadLock::new(&lock);
 	/// ```
 	#[must_use]
-	pub const fn new(rwlock: &'a RwLock<T, R>) -> Self {
+	pub const fn new(rwlock: RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
 }
 
-impl<'a, T: ?Sized, R: RawRwLock> ReadLock<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> ReadLock<T, R> {
 	/// Locks the underlying [`RwLock`] with shared read access, blocking the
 	/// current thread until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(

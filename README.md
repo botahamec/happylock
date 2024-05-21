@@ -71,15 +71,11 @@ println!("{}", *data.1);
 
 **The `ThreadKey` is a mostly-zero cost abstraction.** It doesn't use any memory, and it doesn't really exist at run-time. The only cost comes from calling `ThreadKey::get()`, because the function has to ensure at runtime that the key hasn't already been taken. Dropping the key will also have a small cost.
 
-**Avoid `LockCollection::try_new`.** This constructor will check to make sure that the collection contains no duplicate locks. This is an O(n^2) operation, where n is the number of locks in the collection. `LockCollection::new` and `LockCollection::new_ref` don't need these checks because they use `OwnedLockable`, which is guaranteed to be unique as long as it is accessible. As a last resort, `LockCollection::new_unchecked` doesn't do this check, but is unsafe to call.
+**Avoid `LockCollection::try_new`.** This constructor will check to make sure that the collection contains no duplicate locks. This is an O(nlogn) operation, where n is the number of locks in the collection. `LockCollection::new` and `LockCollection::new_ref` don't need these checks because they use `OwnedLockable`, which is guaranteed to be unique as long as it is accessible. As a last resort, `LockCollection::new_unchecked` doesn't do this check, but is unsafe to call.
 
-**Avoid using distinct lock orders for `LockCollection`.** The problem is that this library must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
-
-**Avoid tuples in `LockCollection`.** Tuples become spinlocks if the first value is already unlocked. This will be fixed in the future. For now, if you need a tuple, make the lock that is most likely to be locked the first element.
+**Avoid using distinct lock orders for `RetryingLockCollection`.** The problem is that this collection must iterate through the list of locks, and not complete until every single one of them is unlocked. This also means that attempting to lock multiple mutexes gives you a lower chance of ever running. Only one needs to be locked for the operation to need a reset. This problem can be prevented by not doing that in your code. Resources should be obtained in the same order on every thread.
 
 ## Future Work
-
-Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow. A more fair system for getting sets of locks would help, but I have no clue what that looks like.
 
 It might to possible to break the `ThreadKey` system by having two crates import this crate and call `ThreadKey::get`. I'm not quite sure how this works, but Rust could decide to give each crate their own key, ergo one thread would get two keys. I don't think the standard library would have this issue. At a certain point, I have to recognize that someone could also just import the standard library mutex and get a deadlock that way.
 

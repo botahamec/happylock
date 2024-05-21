@@ -47,14 +47,16 @@ pub unsafe trait Lock: Send + Sync {
 	unsafe fn unlock(&self);
 }
 
-pub unsafe trait Lockable<'a> {
+pub unsafe trait Lockable {
 	/// The guard returned that does not hold a key
-	type Guard;
+	type Guard<'g>
+	where
+		Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>);
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>);
 
 	#[must_use]
-	unsafe fn guard(&'a self) -> Self::Guard;
+	unsafe fn guard(&self) -> Self::Guard<'_>;
 }
 
 /// A type that may be locked and unlocked, and is known to be the only valid
@@ -64,7 +66,7 @@ pub unsafe trait Lockable<'a> {
 ///
 /// There must not be any two values which can unlock the value at the same
 /// time, i.e., this must either be an owned value or a mutable reference.
-pub unsafe trait OwnedLockable<'a>: Lockable<'a> {}
+pub unsafe trait OwnedLockable: Lockable {}
 
 unsafe impl<T: Send, R: RawMutex + Send + Sync> Lock for Mutex<T, R> {
 	unsafe fn lock(&self) {
@@ -94,138 +96,134 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lock for RwLock<T, R> {
 	}
 }
 
-unsafe impl<'a, T: Send + 'a, R: RawMutex + Send + Sync + 'a> Lockable<'a> for Mutex<T, R> {
-	type Guard = MutexRef<'a, T, R>;
+unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
+	type Guard<'g> = MutexRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		ptrs.push(self);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		MutexRef::new(self)
 	}
 }
 
-unsafe impl<'a, T: Send + 'a, R: RawRwLock + Send + Sync + 'a> Lockable<'a> for RwLock<T, R> {
-	type Guard = RwLockWriteRef<'a, T, R>;
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
+	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		ptrs.push(self);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		RwLockWriteRef::new(self)
 	}
 }
 
-unsafe impl<'a, T: Send + 'a, R: RawMutex + Send + Sync + 'a> OwnedLockable<'a> for Mutex<T, R> {}
+unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
 
-unsafe impl<'a, T: Send + 'a, R: RawRwLock + Send + Sync + 'a> OwnedLockable<'a> for RwLock<T, R> {}
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
 
-unsafe impl<'a, T: Send + 'a, R: RawRwLock + Send + Sync + 'a> Lockable<'a> for ReadLock<'a, T, R> {
-	type Guard = RwLockReadRef<'a, T, R>;
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<T, R> {
+	type Guard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		ptrs.push(self.as_ref());
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		RwLockReadRef::new(self.as_ref())
 	}
 }
 
-unsafe impl<'a, T: Send + 'a, R: RawRwLock + Send + Sync + 'a> Lockable<'a>
-	for WriteLock<'a, T, R>
-{
-	type Guard = RwLockWriteRef<'a, T, R>;
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<T, R> {
+	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		ptrs.push(self.as_ref());
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		RwLockWriteRef::new(self.as_ref())
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &'a T {
-	type Guard = T::Guard;
+unsafe impl<T: Lockable> Lockable for &T {
+	type Guard<'g> = T::Guard<'g> where Self: 'g;
 
-	fn get_ptrs(&self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		(*self).get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(*self).guard()
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
-	type Guard = T::Guard;
+unsafe impl<T: Lockable> Lockable for &mut T {
+	type Guard<'g> = T::Guard<'g> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		(**self).get_ptrs(ptrs)
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(**self).guard()
 	}
 }
 
-unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for &mut T {}
+unsafe impl<T: OwnedLockable> OwnedLockable for &mut T {}
 
-unsafe impl<'a, A: Lockable<'a>> Lockable<'a> for (A,) {
-	type Guard = (A::Guard,);
+unsafe impl<A: Lockable> Lockable for (A,) {
+	type Guard<'g> = (A::Guard<'g>,) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(self.0.guard(),)
 	}
 }
 
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
-	type Guard = (A::Guard, B::Guard);
+unsafe impl<A: Lockable, B: Lockable> Lockable for (A, B) {
+	type Guard<'g> = (A::Guard<'g>, B::Guard<'g>) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(self.0.guard(), self.1.guard())
 	}
 }
 
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>> Lockable<'a> for (A, B, C) {
-	type Guard = (A::Guard, B::Guard, C::Guard);
+unsafe impl<A: Lockable, B: Lockable, C: Lockable> Lockable for (A, B, C) {
+	type Guard<'g> = (A::Guard<'g>, B::Guard<'g>, C::Guard<'g>) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(self.0.guard(), self.1.guard(), self.2.guard())
 	}
 }
 
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'a>> Lockable<'a>
-	for (A, B, C, D)
-{
-	type Guard = (A::Guard, B::Guard, C::Guard, D::Guard);
+unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable> Lockable for (A, B, C, D) {
+	type Guard<'g> = (A::Guard<'g>, B::Guard<'g>, C::Guard<'g>, D::Guard<'g>) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
 		self.3.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(
 			self.0.guard(),
 			self.1.guard(),
@@ -235,12 +233,18 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 	}
 }
 
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'a>, E: Lockable<'a>>
-	Lockable<'a> for (A, B, C, D, E)
+unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable> Lockable
+	for (A, B, C, D, E)
 {
-	type Guard = (A::Guard, B::Guard, C::Guard, D::Guard, E::Guard);
+	type Guard<'g> = (
+		A::Guard<'g>,
+		B::Guard<'g>,
+		C::Guard<'g>,
+		D::Guard<'g>,
+		E::Guard<'g>,
+	) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -248,7 +252,7 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 		self.4.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(
 			self.0.guard(),
 			self.1.guard(),
@@ -259,19 +263,19 @@ unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'
 	}
 }
 
-unsafe impl<
-		'a,
-		A: Lockable<'a>,
-		B: Lockable<'a>,
-		C: Lockable<'a>,
-		D: Lockable<'a>,
-		E: Lockable<'a>,
-		F: Lockable<'a>,
-	> Lockable<'a> for (A, B, C, D, E, F)
+unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable, F: Lockable> Lockable
+	for (A, B, C, D, E, F)
 {
-	type Guard = (A::Guard, B::Guard, C::Guard, D::Guard, E::Guard, F::Guard);
+	type Guard<'g> = (
+		A::Guard<'g>,
+		B::Guard<'g>,
+		C::Guard<'g>,
+		D::Guard<'g>,
+		E::Guard<'g>,
+		F::Guard<'g>,
+	) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -280,7 +284,7 @@ unsafe impl<
 		self.5.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(
 			self.0.guard(),
 			self.1.guard(),
@@ -292,28 +296,20 @@ unsafe impl<
 	}
 }
 
-unsafe impl<
-		'a,
-		A: Lockable<'a>,
-		B: Lockable<'a>,
-		C: Lockable<'a>,
-		D: Lockable<'a>,
-		E: Lockable<'a>,
-		F: Lockable<'a>,
-		G: Lockable<'a>,
-	> Lockable<'a> for (A, B, C, D, E, F, G)
+unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable, F: Lockable, G: Lockable>
+	Lockable for (A, B, C, D, E, F, G)
 {
-	type Guard = (
-		A::Guard,
-		B::Guard,
-		C::Guard,
-		D::Guard,
-		E::Guard,
-		F::Guard,
-		G::Guard,
-	);
+	type Guard<'g> = (
+		A::Guard<'g>,
+		B::Guard<'g>,
+		C::Guard<'g>,
+		D::Guard<'g>,
+		E::Guard<'g>,
+		F::Guard<'g>,
+		G::Guard<'g>,
+	) where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -323,7 +319,7 @@ unsafe impl<
 		self.6.get_ptrs(ptrs);
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(
 			self.0.guard(),
 			self.1.guard(),
@@ -336,71 +332,63 @@ unsafe impl<
 	}
 }
 
-unsafe impl<'a, A: OwnedLockable<'a>> OwnedLockable<'a> for (A,) {}
-unsafe impl<'a, A: OwnedLockable<'a>, B: OwnedLockable<'a>> OwnedLockable<'a> for (A, B) {}
+unsafe impl<A: OwnedLockable> OwnedLockable for (A,) {}
+unsafe impl<A: OwnedLockable, B: OwnedLockable> OwnedLockable for (A, B) {}
 
-unsafe impl<'a, A: OwnedLockable<'a>, B: OwnedLockable<'a>, C: OwnedLockable<'a>> OwnedLockable<'a>
-	for (A, B, C)
+unsafe impl<A: OwnedLockable, B: OwnedLockable, C: OwnedLockable> OwnedLockable for (A, B, C) {}
+
+unsafe impl<A: OwnedLockable, B: OwnedLockable, C: OwnedLockable, D: OwnedLockable> OwnedLockable
+	for (A, B, C, D)
 {
 }
 
 unsafe impl<
 		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D)
+		A: OwnedLockable,
+		B: OwnedLockable,
+		C: OwnedLockable,
+		D: OwnedLockable,
+		E: OwnedLockable,
+	> OwnedLockable for (A, B, C, D, E)
 {
 }
 
 unsafe impl<
 		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-		E: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D, E)
+		A: OwnedLockable,
+		B: OwnedLockable,
+		C: OwnedLockable,
+		D: OwnedLockable,
+		E: OwnedLockable,
+		F: OwnedLockable,
+	> OwnedLockable for (A, B, C, D, E, F)
 {
 }
 
 unsafe impl<
 		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-		E: OwnedLockable<'a>,
-		F: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D, E, F)
+		A: OwnedLockable,
+		B: OwnedLockable,
+		C: OwnedLockable,
+		D: OwnedLockable,
+		E: OwnedLockable,
+		F: OwnedLockable,
+		G: OwnedLockable,
+	> OwnedLockable for (A, B, C, D, E, F, G)
 {
 }
 
-unsafe impl<
-		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-		E: OwnedLockable<'a>,
-		F: OwnedLockable<'a>,
-		G: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D, E, F, G)
-{
-}
+unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
+	type Guard<'g> = [T::Guard<'g>; N] where Self: 'g;
 
-unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
-	type Guard = [T::Guard; N];
-
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
 		}
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
-		let mut guards = MaybeUninit::<[MaybeUninit<T::Guard>; N]>::uninit().assume_init();
+	unsafe fn guard<'g>(&'g self) -> Self::Guard<'g> {
+		let mut guards = MaybeUninit::<[MaybeUninit<T::Guard<'g>>; N]>::uninit().assume_init();
 		for i in 0..N {
 			guards[i].write(self[i].guard());
 		}
@@ -409,16 +397,16 @@ unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
-	type Guard = Box<[T::Guard]>;
+unsafe impl<T: Lockable> Lockable for Box<[T]> {
+	type Guard<'g> = Box<[T::Guard<'g>]> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		for lock in self.iter() {
 			lock.get_ptrs(ptrs);
 		}
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		let mut guards = Vec::new();
 		for lock in self.iter() {
 			guards.push(lock.guard());
@@ -428,16 +416,16 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
-	type Guard = Vec<T::Guard>;
+unsafe impl<T: Lockable> Lockable for Vec<T> {
+	type Guard<'g> = Vec<T::Guard<'g>> where Self: 'g;
 
-	fn get_ptrs(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
 		}
 	}
 
-	unsafe fn guard(&'a self) -> Self::Guard {
+	unsafe fn guard(&self) -> Self::Guard<'_> {
 		let mut guards = Vec::new();
 		for lock in self {
 			guards.push(lock.guard());
@@ -447,6 +435,6 @@ unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
 	}
 }
 
-unsafe impl<'a, T: OwnedLockable<'a>, const N: usize> OwnedLockable<'a> for [T; N] {}
-unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Box<[T]> {}
-unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Vec<T> {}
+unsafe impl<T: OwnedLockable, const N: usize> OwnedLockable for [T; N] {}
+unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
+unsafe impl<T: OwnedLockable> OwnedLockable for Vec<T> {}
