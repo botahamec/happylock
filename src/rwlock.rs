@@ -56,7 +56,8 @@ pub struct RwLock<T: ?Sized, R> {
 /// that only read access is needed to the data.
 ///
 /// [`LockCollection`]: `crate::LockCollection`
-pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
+#[repr(transparent)]
+pub struct ReadLock<T: ?Sized, R>(RwLock<T, R>);
 
 /// Grants write access to an [`RwLock`]
 ///
@@ -64,7 +65,8 @@ pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
 /// that write access is needed to the data.
 ///
 /// [`LockCollection`]: `crate::LockCollection`
-pub struct WriteLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
+#[repr(transparent)]
+pub struct WriteLock<T: ?Sized, R>(RwLock<T, R>);
 
 /// RAII structure that unlocks the shared read access to a [`RwLock`]
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(

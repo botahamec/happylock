@@ -6,7 +6,7 @@ use crate::key::Keyable;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
 
-impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'a, T, R> {
+impl<T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -28,19 +28,19 @@ impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'a, T, R> {
 	}
 }
 
-impl<'a, T: ?Sized, R> From<&'a RwLock<T, R>> for WriteLock<'a, T, R> {
-	fn from(value: &'a RwLock<T, R>) -> Self {
+impl<T, R> From<RwLock<T, R>> for WriteLock<T, R> {
+	fn from(value: RwLock<T, R>) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<'a, T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<'a, T, R> {
+impl<T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
-		self.0
+		&self.0
 	}
 }
 
-impl<'a, T: ?Sized, R> WriteLock<'a, T, R> {
+impl<T, R> WriteLock<T, R> {
 	/// Creates a new `WriteLock` which accesses the given [`RwLock`]
 	///
 	/// # Examples
@@ -52,12 +52,12 @@ impl<'a, T: ?Sized, R> WriteLock<'a, T, R> {
 	/// let write_lock = WriteLock::new(&lock);
 	/// ```
 	#[must_use]
-	pub const fn new(rwlock: &'a RwLock<T, R>) -> Self {
+	pub const fn new(rwlock: RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
 }
 
-impl<'a, T: ?Sized, R: RawRwLock> WriteLock<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> WriteLock<T, R> {
 	/// Locks the underlying [`RwLock`] with exclusive write access, blocking
 	/// the current until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(

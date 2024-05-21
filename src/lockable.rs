@@ -124,7 +124,7 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
 
 unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
 
-unsafe impl<'r, T: Send + 'r, R: RawRwLock + Send + Sync + 'r> Lockable for ReadLock<'r, T, R> {
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<T, R> {
 	type Guard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
@@ -136,7 +136,7 @@ unsafe impl<'r, T: Send + 'r, R: RawRwLock + Send + Sync + 'r> Lockable for Read
 	}
 }
 
-unsafe impl<'r, T: Send + 'r, R: RawRwLock + Send + Sync + 'r> Lockable for WriteLock<'r, T, R> {
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<T, R> {
 	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
