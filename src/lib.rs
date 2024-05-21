@@ -22,10 +22,10 @@
 //! 4. **partial allocation**
 //!
 //! This library seeks to solve **partial allocation** by requiring total
-//! allocation. All of the resources a thread needs must be allocated at the
-//! same time. In order to request new resources, the old resources must be
-//! dropped first. Requesting multiple resources at once is atomic. You either
-//! get all of the requested resources or none at all.
+//! allocation. All the resources a thread needs must be allocated at the same
+//! time. In order to request new resources, the old resources must be dropped
+//! first. Requesting multiple resources at once is atomic. You either get all
+//! the requested resources or none at all.
 //!
 //! # Performance
 //!

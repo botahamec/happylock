@@ -28,8 +28,8 @@ impl<T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<T, R> {
 	}
 }
 
-impl<T, R> From<RwLock<T, R>> for ReadLock<T, R> {
-	fn from(value: RwLock<T, R>) -> Self {
+impl<'l, T, R> From<&'l RwLock<T, R>> for ReadLock<'l, T, R> {
+	fn from(value: &'l RwLock<T, R>) -> Self {
 		Self::new(value)
 	}
 }
@@ -40,7 +40,7 @@ impl<T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<T, R> {
 	}
 }
 
-impl<T, R> ReadLock<T, R> {
+impl<'l, T, R> ReadLock<'l, T, R> {
 	/// Creates a new `ReadLock` which accesses the given [`RwLock`]
 	///
 	/// # Examples
@@ -52,12 +52,12 @@ impl<T, R> ReadLock<T, R> {
 	/// let read_lock = ReadLock::new(&lock);
 	/// ```
 	#[must_use]
-	pub const fn new(rwlock: RwLock<T, R>) -> Self {
+	pub const fn new(rwlock: &'l RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
 }
 
-impl<T: ?Sized, R: RawRwLock> ReadLock<T, R> {
+impl<'l, T: ?Sized, R: RawRwLock> ReadLock<'l, T, R> {
 	/// Locks the underlying [`RwLock`] with shared read access, blocking the
 	/// current thread until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
@@ -82,7 +82,7 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<T, R> {
 		self.0.try_read_no_key()
 	}
 
-	/// Immediately drops the guard, and consequentlyreleases the shared lock
+	/// Immediately drops the guard, and consequently releases the shared lock
 	/// on the underlying [`RwLock`].
 	pub fn unlock<'key, Key: Keyable + 'key>(guard: RwLockReadGuard<'_, 'key, T, Key, R>) -> Key {
 		RwLock::unlock_read(guard)

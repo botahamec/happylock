@@ -21,15 +21,15 @@ impl<T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<T, R> {
 				}
 			}
 
-			f.debug_struct("ReadLock")
+			f.debug_struct("WriteLock")
 				.field("data", &LockedPlaceholder)
 				.finish()
 		}
 	}
 }
 
-impl<T, R> From<RwLock<T, R>> for WriteLock<T, R> {
-	fn from(value: RwLock<T, R>) -> Self {
+impl<'l, T, R> From<&'l RwLock<T, R>> for WriteLock<'l, T, R> {
+	fn from(value: &'l RwLock<T, R>) -> Self {
 		Self::new(value)
 	}
 }
@@ -40,7 +40,7 @@ impl<T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<T, R> {
 	}
 }
 
-impl<T, R> WriteLock<T, R> {
+impl<'l, T, R> WriteLock<'l, T, R> {
 	/// Creates a new `WriteLock` which accesses the given [`RwLock`]
 	///
 	/// # Examples
@@ -52,7 +52,7 @@ impl<T, R> WriteLock<T, R> {
 	/// let write_lock = WriteLock::new(&lock);
 	/// ```
 	#[must_use]
-	pub const fn new(rwlock: RwLock<T, R>) -> Self {
+	pub const fn new(rwlock: &'l RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
 }

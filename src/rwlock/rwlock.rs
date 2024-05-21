@@ -254,7 +254,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// Attempts to lock this `RwLock` with exclusive write access.
 	///
 	/// This function does not block. If the lock could not be acquired at this
-	/// time, then `None` is returned. Otherwise an RAII guard is returned
+	/// time, then `None` is returned. Otherwise, an RAII guard is returned
 	/// which will release the lock when it is dropped.
 	///
 	/// This function does not provide any guarantees with respect to the

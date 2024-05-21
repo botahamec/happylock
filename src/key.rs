@@ -20,7 +20,7 @@ static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 /// The key for the current thread.
 ///
 /// Only one of these exist per thread. To get the current thread's key, call
-/// [`ThreadKey::get`]. If the `ThreadKey` is dropped, it can be reobtained.
+/// [`ThreadKey::get`]. If the `ThreadKey` is dropped, it can be re-obtained.
 pub struct ThreadKey {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
 }
