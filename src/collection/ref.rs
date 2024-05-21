@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable};
+use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable, Sharable};
 
 use super::{LockGuard, RefLockCollection};
 
@@ -48,6 +48,26 @@ where
 		self.data.into_iter()
 	}
 }
+
+unsafe impl<'c, L: Lockable> Lockable for RefLockCollection<'c, L> {
+	type Guard<'g> = L::Guard<'g> where Self: 'g;
+
+	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+		ptrs.extend_from_slice(&self.locks);
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		self.data.guard()
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		self.data.read_guard()
+	}
+}
+
+unsafe impl<'c, L: Sharable> Sharable for RefLockCollection<'c, L> {}
 
 impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 	/// Creates a new collection of owned locks.
@@ -143,7 +163,10 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// *guard.0 += 1;
 	/// *guard.1 = "1";
 	/// ```
-	pub fn lock<'key: 'a, Key: Keyable + 'key>(&'a self, key: Key) -> LockGuard<'a, 'key, L, Key> {
+	pub fn lock<'key: 'a, Key: Keyable + 'key>(
+		&'a self,
+		key: Key,
+	) -> LockGuard<'key, L::Guard<'a>, Key> {
 		for lock in &self.locks {
 			// safety: we have the thread key
 			unsafe { lock.lock() };
@@ -183,7 +206,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	pub fn try_lock<'key: 'a, Key: Keyable + 'key>(
 		&'a self,
 		key: Key,
-	) -> Option<LockGuard<'a, 'key, L, Key>> {
+	) -> Option<LockGuard<'key, L::Guard<'a>, Key>> {
 		let guard = unsafe {
 			for (i, lock) in self.locks.iter().enumerate() {
 				// safety: we have the thread key
@@ -226,7 +249,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// let key = LockCollection::unlock(guard);
 	/// ```
 	#[allow(clippy::missing_const_for_fn)]
-	pub fn unlock<'key: 'a, Key: Keyable + 'key>(guard: LockGuard<'a, 'key, L, Key>) -> Key {
+	pub fn unlock<'key: 'a, Key: Keyable + 'key>(guard: LockGuard<'key, L::Guard<'a>, Key>) -> Key {
 		drop(guard.guard);
 		guard.key
 	}

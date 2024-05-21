@@ -113,8 +113,9 @@ pub mod collection;
 pub mod mutex;
 pub mod rwlock;
 
+pub use collection::BoxedLockCollection as LockCollection;
 pub use key::{Keyable, ThreadKey};
-pub use lockable::{Lockable, OwnedLockable};
+pub use lockable::{Lockable, OwnedLockable, Sharable};
 
 #[cfg(feature = "spin")]
 pub use mutex::SpinLock;

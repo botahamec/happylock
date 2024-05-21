@@ -1,15 +1,12 @@
 use std::marker::PhantomData;
 
-use crate::{
-	key::Keyable,
-	lockable::{Lock, Lockable},
-};
+use crate::{key::Keyable, lockable::Lock};
 
-mod boxed_collection;
+mod boxed;
 mod guard;
-mod owned_collection;
-mod ref_collection;
-mod retry_collection;
+mod owned;
+mod r#ref;
+mod retry;
 
 pub struct OwnedLockCollection<L> {
 	data: L,
@@ -24,15 +21,15 @@ pub struct RefLockCollection<'a, L> {
 	data: &'a L,
 }
 
-pub struct BoxedLockCollection<'a, L>(RefLockCollection<'a, L>);
+pub struct BoxedLockCollection<'a, L: 'a>(RefLockCollection<'a, L>);
 
 pub struct RetryingLockCollection<L> {
 	data: L,
 }
 
 /// A RAII guard for a generic [`Lockable`] type.
-pub struct LockGuard<'g, 'key: 'g, L: Lockable + 'g, Key: Keyable + 'key> {
-	guard: L::Guard<'g>,
+pub struct LockGuard<'key, Guard, Key: Keyable + 'key> {
+	guard: Guard,
 	key: Key,
 	_phantom: PhantomData<&'key ()>,
 }
