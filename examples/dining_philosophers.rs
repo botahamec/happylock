@@ -61,9 +61,13 @@ impl Philosopher {
 }
 
 fn main() {
-	let handles = PHILOSOPHERS
+	let handles: Vec<_> = PHILOSOPHERS
 		.iter()
-		.map(|philosopher| thread::spawn(move || philosopher.cycle()));
+		.map(|philosopher| thread::spawn(move || philosopher.cycle()))
+		// The `collect` is absolutely necessary, because we're using lazy
+		// iterators. If `collect` isn't used, then the thread won't spawn
+		// until we try to join on it.
+		.collect();
 
 	for handle in handles {
 		_ = handle.join();
