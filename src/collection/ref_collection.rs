@@ -15,9 +15,8 @@ fn get_locks<'a, L: Lockable<'a> + 'a>(data: &'a L) -> Vec<&'a dyn Lock> {
 /// returns `true` if the sorted list contains a duplicate
 #[must_use]
 fn contains_duplicates(l: &[&dyn Lock]) -> bool {
-	l.windows(2).any(|window| {
-		std::ptr::addr_eq(std::ptr::from_ref(window[0]), std::ptr::from_ref(window[1]))
-	})
+	l.windows(2)
+		.any(|window| std::ptr::eq(window[0], window[1]))
 }
 
 impl<'a, L: Lockable<'a>> AsRef<L> for RefLockCollection<'a, L> {
