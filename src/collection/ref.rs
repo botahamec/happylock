@@ -1,12 +1,13 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable, Sharable};
+use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::Keyable;
 
 use super::{LockGuard, RefLockCollection};
 
 #[must_use]
-pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
+pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
 	locks.sort_by_key(|lock| std::ptr::from_ref(*lock));
@@ -15,7 +16,7 @@ pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
 
 /// returns `true` if the sorted list contains a duplicate
 #[must_use]
-fn contains_duplicates(l: &[&dyn Lock]) -> bool {
+fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 	l.windows(2)
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
@@ -43,7 +44,7 @@ unsafe impl<'c, L: Lockable> Lockable for RefLockCollection<'c, L> {
 
 	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.extend_from_slice(&self.locks);
 	}
 

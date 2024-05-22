@@ -1,4 +1,6 @@
-use crate::{lockable::Lock, Keyable, Lockable, OwnedLockable, Sharable};
+use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::Keyable;
+
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
@@ -7,7 +9,7 @@ use super::{LockGuard, RetryingLockCollection};
 fn contains_duplicates<L: Lockable>(data: L) -> bool {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
-	let locks = locks.into_iter().map(|l| l as *const dyn Lock);
+	let locks = locks.into_iter().map(|l| l as *const dyn RawLock);
 
 	let mut locks_set = HashSet::new();
 	for lock in locks {
@@ -24,7 +26,7 @@ unsafe impl<L: Lockable> Lockable for RetryingLockCollection<L> {
 
 	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.data.get_ptrs(ptrs)
 	}
 

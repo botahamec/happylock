@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 
-use crate::{lockable::Lock, Keyable, Lockable, OwnedLockable, Sharable};
+use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::Keyable;
 
 use super::{LockGuard, OwnedLockCollection};
 
-fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
+fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
 	locks
@@ -15,7 +16,7 @@ unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
 
 	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.data.get_ptrs(ptrs)
 	}
 

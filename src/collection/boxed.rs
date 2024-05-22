@@ -1,14 +1,14 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::lockable::Lock;
-use crate::{Keyable, Lockable, OwnedLockable, Sharable};
+use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::Keyable;
 
 use super::{BoxedLockCollection, LockGuard};
 
 /// returns `true` if the sorted list contains a duplicate
 #[must_use]
-fn contains_duplicates(l: &[&dyn Lock]) -> bool {
+fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 	l.windows(2)
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
@@ -18,7 +18,7 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 
 	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.data.get_ptrs(ptrs)
 	}
 

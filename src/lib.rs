@@ -107,18 +107,23 @@
 //! ```
 
 mod key;
-mod lockable;
 
 pub mod collection;
+pub mod lockable;
 pub mod mutex;
 pub mod rwlock;
 
-pub use collection::BoxedLockCollection as LockCollection;
 pub use key::{Keyable, ThreadKey};
-pub use lockable::{Lockable, OwnedLockable, Sharable};
 
 #[cfg(feature = "spin")]
 pub use mutex::SpinLock;
+
+/// A collection of locks that can be acquired simultaneously.
+///
+/// This re-exports [`BoxedLockCollection`] as a sensible default.
+///
+/// [`BoxedLockCollection`]: collection::BoxedLockCollection
+pub type LockCollection<L> = collection::BoxedLockCollection<L>;
 
 /// A mutual exclusion primitive useful for protecting shared data, which cannot deadlock.
 ///

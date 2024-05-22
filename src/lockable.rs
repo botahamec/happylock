@@ -7,14 +7,14 @@ use crate::{
 
 use lock_api::{RawMutex, RawRwLock};
 
-/// A type that may be locked and unlocked
+/// A raw lock type that may be locked and unlocked
 ///
 /// # Safety
 ///
 /// A deadlock must never occur. The `unlock` method must correctly unlock the
 /// data. The `get_ptrs` method must be implemented correctly. The `Output`
 /// must be unlocked when it is dropped.
-pub unsafe trait Lock: Send + Sync {
+pub unsafe trait RawLock: Send + Sync {
 	/// Blocks until the lock is acquired
 	///
 	/// # Safety
@@ -46,32 +46,111 @@ pub unsafe trait Lock: Send + Sync {
 	/// It is undefined behavior to use this if the lock is not acquired
 	unsafe fn unlock(&self);
 
+	/// Blocks until the data the lock protects can be safely read.
+	///
+	/// Some locks, but not all, will allow multiple readers at once. If
+	/// multiple readers are allowed for a [`Lockable`] type, then the
+	/// [`Sharable`] marker trait should be implemented.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this without ownership or mutable
+	/// access to the [`ThreadKey`], which should last as long as the return
+	/// value is alive.
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn read(&self);
 
+	// Attempt to read without blocking.
+	///
+	/// Returns `true` if successful, `false` otherwise.
+	///
+	/// Some locks, but not all, will allow multiple readers at once. If
+	/// multiple readers are allowed for a [`Lockable`] type, then the
+	/// [`Sharable`] marker trait should be implemented.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this without ownership or mutable
+	/// access to the [`ThreadKey`], which should last as long as the return
+	/// value is alive.
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn try_read(&self) -> bool;
 
+	/// Releases the lock after calling `read`.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this if the read lock is not acquired
 	unsafe fn unlock_read(&self);
 }
 
+/// A type that may be locked and unlocked.
+///
+/// This trait is usually implemented on collections of [`RawLock`]s. For
+/// example, a `Vec<Mutex<i32>>`.
+///
+/// # Safety
+///
+/// Acquiring the locks returned by `get_ptrs` must allow for the values
+/// returned by `guard` or `read_guard` to be safely used for exclusive or
+/// shared access, respectively.
+///
+/// Dropping the `Guard` and `ReadGuard` types must unlock those same locks.
+///
+/// The order of the resulting list from `get_ptrs` must be deterministic. As
+/// long as the value is not mutated, the references must always be in the same
+/// order.
 pub unsafe trait Lockable {
-	/// The guard returned that does not hold a key
+	/// The exclusive guard that does not hold a key
 	type Guard<'g>
 	where
 		Self: 'g;
 
+	/// The shared guard type that does not hold a key
 	type ReadGuard<'g>
 	where
 		Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>);
+	/// Yields a list of references to the [`RawLock`]s contained within this
+	/// value.
+	///
+	/// These reference locks which must be locked before acquiring a guard,
+	/// and unlocked when the guard is dropped. The order of the resulting list
+	/// is deterministic. As long as the value is not mutated, the references
+	/// will always be in the same order.
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>);
 
+	/// Returns a guard that can be used to access the underlying data mutably.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked
+	/// exclusively before calling this function. The locks must not be
+	/// unlocked until this guard is dropped.
 	#[must_use]
 	unsafe fn guard(&self) -> Self::Guard<'_>;
 
+	/// Returns a guard that can be used to immutably access the underlying
+	/// data.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
+	/// [`RawLock::read`] before calling this function. The locks must not be
+	/// unlocked until this guard is dropped.
 	#[must_use]
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
 }
 
+/// A marker trait to indicate that multiple readers can access the lock at a
+/// time.
+///
+/// # Safety
+///
+/// This type must only be implemented if the lock can be safely shared between
+/// multiple readers.
 pub unsafe trait Sharable: Lockable {}
 
 /// A type that may be locked and unlocked, and is known to be the only valid
@@ -83,7 +162,7 @@ pub unsafe trait Sharable: Lockable {}
 /// time, i.e., this must either be an owned value or a mutable reference.
 pub unsafe trait OwnedLockable: Lockable {}
 
-unsafe impl<T: Send, R: RawMutex + Send + Sync> Lock for Mutex<T, R> {
+unsafe impl<T: Send, R: RawMutex + Send + Sync> RawLock for Mutex<T, R> {
 	unsafe fn lock(&self) {
 		self.raw().lock()
 	}
@@ -109,7 +188,7 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> Lock for Mutex<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lock for RwLock<T, R> {
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> RawLock for RwLock<T, R> {
 	unsafe fn lock(&self) {
 		self.raw().lock_exclusive()
 	}
@@ -139,7 +218,7 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
 	type Guard<'g> = MutexRef<'g, T, R> where Self: 'g;
 	type ReadGuard<'g> = MutexRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
 	}
 
@@ -157,7 +236,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
 
 	type ReadGuard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
 	}
 
@@ -181,7 +260,7 @@ unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'l, T
 
 	type ReadGuard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self.as_ref());
 	}
 
@@ -199,7 +278,7 @@ unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'l, 
 
 	type ReadGuard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self.as_ref());
 	}
 
@@ -219,7 +298,7 @@ unsafe impl<T: Lockable> Lockable for &T {
 
 	type ReadGuard<'g> = T::ReadGuard<'g> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		(*self).get_ptrs(ptrs);
 	}
 
@@ -237,7 +316,7 @@ unsafe impl<T: Lockable> Lockable for &mut T {
 
 	type ReadGuard<'g> = T::ReadGuard<'g> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		(**self).get_ptrs(ptrs)
 	}
 
@@ -257,7 +336,7 @@ unsafe impl<A: Lockable> Lockable for (A,) {
 
 	type ReadGuard<'g> = (A::ReadGuard<'g>,) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 	}
 
@@ -275,7 +354,7 @@ unsafe impl<A: Lockable, B: Lockable> Lockable for (A, B) {
 
 	type ReadGuard<'g> = (A::ReadGuard<'g>, B::ReadGuard<'g>) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 	}
@@ -294,7 +373,7 @@ unsafe impl<A: Lockable, B: Lockable, C: Lockable> Lockable for (A, B, C) {
 
 	type ReadGuard<'g> = (A::ReadGuard<'g>, B::ReadGuard<'g>, C::ReadGuard<'g>) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -323,7 +402,7 @@ unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable> Lockable for (A,
 		D::ReadGuard<'g>,
 	) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -368,7 +447,7 @@ unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable> Loc
 		E::ReadGuard<'g>,
 	) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -418,7 +497,7 @@ unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable, F: 
 		F::ReadGuard<'g>,
 	) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -473,7 +552,7 @@ unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable, F: 
 		G::ReadGuard<'g>,
 	) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.0.get_ptrs(ptrs);
 		self.1.get_ptrs(ptrs);
 		self.2.get_ptrs(ptrs);
@@ -573,7 +652,7 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 
 	type ReadGuard<'g> = [T::ReadGuard<'g>; N] where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
 		}
@@ -603,7 +682,7 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 
 	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self.iter() {
 			lock.get_ptrs(ptrs);
 		}
@@ -633,7 +712,7 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 
 	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn Lock>) {
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
 		}
