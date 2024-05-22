@@ -4,7 +4,7 @@ use crate::{Lockable, OwnedLockable};
 
 use super::{BoxedLockCollection, RefLockCollection};
 
-impl<'a, L: 'a> Deref for BoxedLockCollection<'a, L> {
+impl<'a, L> Deref for BoxedLockCollection<'a, L> {
 	type Target = RefLockCollection<'a, L>;
 
 	fn deref(&self) -> &Self::Target {
@@ -12,13 +12,13 @@ impl<'a, L: 'a> Deref for BoxedLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: 'a> DerefMut for BoxedLockCollection<'a, L> {
+impl<'a, L> DerefMut for BoxedLockCollection<'a, L> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
 	}
 }
 
-impl<'a, L: 'a> Drop for BoxedLockCollection<'a, L> {
+impl<'a, L> Drop for BoxedLockCollection<'a, L> {
 	fn drop(&mut self) {
 		// this was created with Box::new
 		let boxed = unsafe { Box::from_raw((self.0.data as *const L).cast_mut()) };
@@ -26,7 +26,7 @@ impl<'a, L: 'a> Drop for BoxedLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: OwnedLockable + 'a> BoxedLockCollection<'a, L> {
+impl<'a, L: OwnedLockable> BoxedLockCollection<'a, L> {
 	#[must_use]
 	pub fn new(data: L) -> Self {
 		let boxed = Box::leak(Box::new(data));
@@ -34,7 +34,7 @@ impl<'a, L: OwnedLockable + 'a> BoxedLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: OwnedLockable + 'a> BoxedLockCollection<'a, L> {
+impl<'a, L: OwnedLockable> BoxedLockCollection<'a, L> {
 	#[must_use]
 	pub fn new_ref(data: &'a L) -> Self {
 		let boxed = Box::leak(Box::new(data));
@@ -45,7 +45,7 @@ impl<'a, L: OwnedLockable + 'a> BoxedLockCollection<'a, L> {
 	}
 }
 
-impl<'a, L: Lockable + 'a> BoxedLockCollection<'a, L> {
+impl<'a, L: Lockable> BoxedLockCollection<'a, L> {
 	#[must_use]
 	pub unsafe fn new_unchecked(data: L) -> Self {
 		let boxed = Box::leak(Box::new(data));

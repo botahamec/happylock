@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 
-use crate::{key::Keyable, lockable::Lock};
+use crate::{key::Keyable, lockable::Lock, Lockable, Sharable};
 
 mod boxed;
 mod guard;
 mod owned;
+mod readonly;
 mod r#ref;
 mod retry;
 
@@ -21,7 +22,7 @@ pub struct RefLockCollection<'a, L> {
 	data: &'a L,
 }
 
-pub struct BoxedLockCollection<'a, L: 'a>(RefLockCollection<'a, L>);
+pub struct BoxedLockCollection<'a, L>(RefLockCollection<'a, L>);
 
 pub struct RetryingLockCollection<L> {
 	data: L,
@@ -32,4 +33,44 @@ pub struct LockGuard<'key, Guard, Key: Keyable + 'key> {
 	guard: Guard,
 	key: Key,
 	_phantom: PhantomData<&'key ()>,
+}
+
+pub struct Readonly<Collection> {
+	collection: Collection,
+}
+
+mod sealed {
+	#[allow(clippy::wildcard_imports)]
+	use super::*;
+
+	pub trait Sealed {}
+
+	impl<L> Sealed for OwnedLockCollection<L> {}
+	impl<'a, L> Sealed for RefLockCollection<'a, L> {}
+	impl<'a, L> Sealed for BoxedLockCollection<'a, L> {}
+	impl<L> Sealed for RetryingLockCollection<L> {}
+}
+
+pub trait LockCollection<L: Lockable>: sealed::Sealed {
+	unsafe fn new_readonly(data: L) -> Self
+	where
+		L: Sharable;
+
+	fn read<'g, 'key, Key: Keyable + 'key>(
+		&self,
+		key: Key,
+	) -> LockGuard<'key, L::ReadGuard<'g>, Key>
+	where
+		L: Sharable;
+
+	fn try_read<'g, 'key, Key: Keyable + 'key>(
+		&self,
+		key: Key,
+	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>>
+	where
+		L: Sharable;
+
+	fn unlock_read<'key, Key: Keyable + 'key>(guard: LockGuard<'key, L::ReadGuard<'_>, Key>) -> Key
+	where
+		L: Sharable;
 }

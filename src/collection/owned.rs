@@ -37,7 +37,9 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 	pub const fn new(data: L) -> Self {
 		Self { data }
 	}
+}
 
+impl<L: Lockable> OwnedLockCollection<L> {
 	pub fn lock<'g, 'key, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,

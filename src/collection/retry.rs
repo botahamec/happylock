@@ -2,7 +2,7 @@ use crate::{lockable::Lock, Keyable, Lockable, OwnedLockable, Sharable};
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use super::{LockGuard, RetryingLockCollection};
+use super::{LockCollection, LockGuard, RetryingLockCollection};
 
 fn contains_duplicates<L: Lockable>(data: L) -> bool {
 	let mut locks = Vec::new();
@@ -267,5 +267,42 @@ impl<L: Sharable> RetryingLockCollection<L> {
 	) -> Key {
 		drop(guard.guard);
 		guard.key
+	}
+}
+
+impl<L: Lockable> LockCollection<L> for RetryingLockCollection<L> {
+	unsafe fn new_readonly(data: L) -> Self
+	where
+		L: Sharable,
+	{
+		// safety: this isn't being shared exclusively, so duplicates don't cause a deadlock
+		unsafe { Self::new_unchecked(data) }
+	}
+
+	fn read<'g, 'key, Key: Keyable + 'key>(
+		&self,
+		key: Key,
+	) -> LockGuard<'key, L::ReadGuard<'g>, Key>
+	where
+		L: Sharable,
+	{
+		self.read(key)
+	}
+
+	fn try_read<'g, 'key, Key: Keyable + 'key>(
+		&self,
+		key: Key,
+	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>>
+	where
+		L: Sharable,
+	{
+		self.try_read(key)
+	}
+
+	fn unlock_read<'key, Key: Keyable + 'key>(guard: LockGuard<'key, L::ReadGuard<'_>, Key>) -> Key
+	where
+		L: Sharable,
+	{
+		Self::unlock_read(guard)
 	}
 }
