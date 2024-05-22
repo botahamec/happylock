@@ -27,6 +27,6 @@ fn main() {
 	let key = ThreadKey::get().unwrap();
 	let data = RefLockCollection::new(&DATA);
 	let data = data.lock(key);
-	println!("{}", *data.0);
-	println!("{}", *data.1);
+	println!("{}", data.0);
+	println!("{}", data.1);
 }

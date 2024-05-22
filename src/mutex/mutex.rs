@@ -43,12 +43,6 @@ impl<T, R: RawMutex> Mutex<T, R> {
 	}
 }
 
-impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
-	fn default() -> Self {
-		Self::new(T::default())
-	}
-}
-
 impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
@@ -68,6 +62,12 @@ impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 				.field("data", &LockedPlaceholder)
 				.finish()
 		}
+	}
+}
+
+impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
+	fn default() -> Self {
+		Self::new(T::default())
 	}
 }
 

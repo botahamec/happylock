@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable, Sharable};
@@ -5,7 +6,7 @@ use crate::{key::Keyable, lockable::Lock, Lockable, OwnedLockable, Sharable};
 use super::{LockGuard, RefLockCollection};
 
 #[must_use]
-fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
+pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn Lock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
 	locks.sort_by_key(|lock| std::ptr::from_ref(*lock));
@@ -19,21 +20,9 @@ fn contains_duplicates(l: &[&dyn Lock]) -> bool {
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
 
-impl<'a, L: Lockable> AsRef<L> for RefLockCollection<'a, L> {
+impl<'a, L> AsRef<L> for RefLockCollection<'a, L> {
 	fn as_ref(&self) -> &L {
 		self.data
-	}
-}
-
-impl<'a, L: Lockable> AsRef<Self> for RefLockCollection<'a, L> {
-	fn as_ref(&self) -> &Self {
-		self
-	}
-}
-
-impl<'a, L: Lockable> AsMut<Self> for RefLockCollection<'a, L> {
-	fn as_mut(&mut self) -> &mut Self {
-		self
 	}
 }
 
@@ -68,6 +57,20 @@ unsafe impl<'c, L: Lockable> Lockable for RefLockCollection<'c, L> {
 }
 
 unsafe impl<'c, L: Sharable> Sharable for RefLockCollection<'c, L> {}
+
+impl<'a, L: Debug> Debug for RefLockCollection<'a, L> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct(stringify!(RefLockCollection))
+			.field("data", self.data)
+			.finish_non_exhaustive()
+	}
+}
+
+impl<'a, L: OwnedLockable + Default> From<&'a L> for RefLockCollection<'a, L> {
+	fn from(value: &'a L) -> Self {
+		Self::new(value)
+	}
+}
 
 impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 	/// Creates a new collection of owned locks.
@@ -142,7 +145,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 			return None;
 		}
 
-		Some(Self { locks, data })
+		Some(Self { data, locks })
 	}
 
 	/// Locks the collection

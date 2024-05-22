@@ -41,6 +41,81 @@ unsafe impl<L: Sharable> Sharable for RetryingLockCollection<L> {}
 
 unsafe impl<L: OwnedLockable> OwnedLockable for RetryingLockCollection<L> {}
 
+impl<L> IntoIterator for RetryingLockCollection<L>
+where
+	L: IntoIterator,
+{
+	type Item = <L as IntoIterator>::Item;
+	type IntoIter = <L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.data.into_iter()
+	}
+}
+
+impl<'a, L> IntoIterator for &'a RetryingLockCollection<L>
+where
+	&'a L: IntoIterator,
+{
+	type Item = <&'a L as IntoIterator>::Item;
+	type IntoIter = <&'a L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.data.into_iter()
+	}
+}
+
+impl<'a, L> IntoIterator for &'a mut RetryingLockCollection<L>
+where
+	&'a mut L: IntoIterator,
+{
+	type Item = <&'a mut L as IntoIterator>::Item;
+	type IntoIter = <&'a mut L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.data.into_iter()
+	}
+}
+
+impl<L: OwnedLockable, I: FromIterator<L> + OwnedLockable> FromIterator<L>
+	for RetryingLockCollection<I>
+{
+	fn from_iter<T: IntoIterator<Item = L>>(iter: T) -> Self {
+		let iter: I = iter.into_iter().collect();
+		Self::new(iter)
+	}
+}
+
+impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for RetryingLockCollection<E> {
+	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
+		self.data.extend(iter)
+	}
+}
+
+impl<L> AsRef<L> for RetryingLockCollection<L> {
+	fn as_ref(&self) -> &L {
+		&self.data
+	}
+}
+
+impl<L> AsMut<L> for RetryingLockCollection<L> {
+	fn as_mut(&mut self) -> &mut L {
+		&mut self.data
+	}
+}
+
+impl<L: OwnedLockable + Default> Default for RetryingLockCollection<L> {
+	fn default() -> Self {
+		Self::new(L::default())
+	}
+}
+
+impl<L: OwnedLockable> From<L> for RetryingLockCollection<L> {
+	fn from(value: L) -> Self {
+		Self::new(value)
+	}
+}
+
 impl<L: OwnedLockable> RetryingLockCollection<L> {
 	#[must_use]
 	pub const fn new(data: L) -> Self {
@@ -63,6 +138,10 @@ impl<L: Lockable> RetryingLockCollection<L> {
 
 	pub fn try_new(data: L) -> Option<Self> {
 		contains_duplicates(&data).then_some(Self { data })
+	}
+
+	pub fn into_inner(self) -> L {
+		self.data
 	}
 
 	pub fn lock<'g, 'key: 'g, Key: Keyable + 'key>(
@@ -267,5 +346,28 @@ impl<L: Sharable> RetryingLockCollection<L> {
 	) -> Key {
 		drop(guard.guard);
 		guard.key
+	}
+}
+
+impl<'a, L: 'a> RetryingLockCollection<L>
+where
+	&'a L: IntoIterator,
+{
+	/// Returns an iterator over references to each value in the collection.
+	#[must_use]
+	pub fn iter(&'a self) -> <&'a L as IntoIterator>::IntoIter {
+		self.into_iter()
+	}
+}
+
+impl<'a, L: 'a> RetryingLockCollection<L>
+where
+	&'a mut L: IntoIterator,
+{
+	/// Returns an iterator over mutable references to each value in the
+	/// collection.
+	#[must_use]
+	pub fn iter_mut(&'a mut self) -> <&'a mut L as IntoIterator>::IntoIter {
+		self.into_iter()
 	}
 }

@@ -59,6 +59,6 @@ fn main() {
 	let data = RefLockCollection::new(&DATA);
 	let data = data.lock(key);
 	for val in &*data {
-		println!("{}", **val);
+		println!("{val}");
 	}
 }

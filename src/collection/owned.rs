@@ -32,10 +32,60 @@ unsafe impl<L: Sharable> Sharable for OwnedLockCollection<L> {}
 
 unsafe impl<L: OwnedLockable> OwnedLockable for OwnedLockCollection<L> {}
 
+impl<L> IntoIterator for OwnedLockCollection<L>
+where
+	L: IntoIterator,
+{
+	type Item = <L as IntoIterator>::Item;
+	type IntoIter = <L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.data.into_iter()
+	}
+}
+
+impl<L: OwnedLockable, I: FromIterator<L> + OwnedLockable> FromIterator<L>
+	for OwnedLockCollection<I>
+{
+	fn from_iter<T: IntoIterator<Item = L>>(iter: T) -> Self {
+		let iter: I = iter.into_iter().collect();
+		Self::new(iter)
+	}
+}
+
+impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for OwnedLockCollection<E> {
+	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
+		self.data.extend(iter)
+	}
+}
+
+impl<L: OwnedLockable> AsMut<L> for OwnedLockCollection<L> {
+	fn as_mut(&mut self) -> &mut L {
+		&mut self.data
+	}
+}
+
+impl<L: OwnedLockable + Default> Default for OwnedLockCollection<L> {
+	fn default() -> Self {
+		Self::new(L::default())
+	}
+}
+
+impl<L: OwnedLockable + Default> From<L> for OwnedLockCollection<L> {
+	fn from(value: L) -> Self {
+		Self::new(value)
+	}
+}
+
 impl<L: OwnedLockable> OwnedLockCollection<L> {
 	#[must_use]
 	pub const fn new(data: L) -> Self {
 		Self { data }
+	}
+
+	#[must_use]
+	pub fn into_inner(self) -> L {
+		self.data
 	}
 
 	pub fn lock<'g, 'key, Key: Keyable + 'key>(

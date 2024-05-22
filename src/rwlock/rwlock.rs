@@ -40,12 +40,6 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 	}
 }
 
-impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
-	fn default() -> Self {
-		Self::new(T::default())
-	}
-}
-
 impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
@@ -65,6 +59,12 @@ impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
 				.field("data", &LockedPlaceholder)
 				.finish()
 		}
+	}
+}
+
+impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
+	fn default() -> Self {
+		Self::new(T::default())
 	}
 }
 

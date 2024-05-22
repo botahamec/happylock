@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -6,6 +7,18 @@ use lock_api::RawMutex;
 use crate::key::Keyable;
 
 use super::{Mutex, MutexGuard, MutexRef};
+
+impl<'a, T: Debug + ?Sized + 'a, R: RawMutex> Debug for MutexRef<'a, T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Debug::fmt(&**self, f)
+	}
+}
+
+impl<'a, T: Display + ?Sized + 'a, R: RawMutex> Display for MutexRef<'a, T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Display::fmt(&**self, f)
+	}
+}
 
 impl<'a, T: ?Sized + 'a, R: RawMutex> Drop for MutexRef<'a, T, R> {
 	fn drop(&mut self) {
@@ -35,9 +48,37 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> DerefMut for MutexRef<'a, T, R> {
 	}
 }
 
+impl<'a, T: ?Sized + 'a, R: RawMutex> AsRef<T> for MutexRef<'a, T, R> {
+	fn as_ref(&self) -> &T {
+		self
+	}
+}
+
+impl<'a, T: ?Sized + 'a, R: RawMutex> AsMut<T> for MutexRef<'a, T, R> {
+	fn as_mut(&mut self) -> &mut T {
+		self
+	}
+}
+
 impl<'a, T: ?Sized + 'a, R: RawMutex> MutexRef<'a, T, R> {
 	pub unsafe fn new(mutex: &'a Mutex<T, R>) -> Self {
 		Self(mutex, PhantomData)
+	}
+}
+
+impl<'a, 'key, T: Debug + ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> Debug
+	for MutexGuard<'a, 'key, T, Key, R>
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Debug::fmt(&**self, f)
+	}
+}
+
+impl<'a, 'key, T: Display + ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> Display
+	for MutexGuard<'a, 'key, T, Key, R>
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Display::fmt(&**self, f)
 	}
 }
 
@@ -56,6 +97,22 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> DerefMut
 {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.mutex
+	}
+}
+
+impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> AsRef<T>
+	for MutexGuard<'a, 'key, T, Key, R>
+{
+	fn as_ref(&self) -> &T {
+		self
+	}
+}
+
+impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawMutex> AsMut<T>
+	for MutexGuard<'a, 'key, T, Key, R>
+{
+	fn as_mut(&mut self) -> &mut T {
+		self
 	}
 }
 
