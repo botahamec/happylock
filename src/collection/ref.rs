@@ -255,6 +255,62 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	}
 }
 
+impl<'a, L: Sharable> RefLockCollection<'a, L> {
+	pub fn read<'key: 'a, Key: Keyable + 'key>(
+		&'a self,
+		key: Key,
+	) -> LockGuard<'key, L::ReadGuard<'a>, Key> {
+		for lock in &self.locks {
+			// safety: we have the thread key
+			unsafe { lock.read() };
+		}
+
+		LockGuard {
+			// safety: we've already acquired the lock
+			guard: unsafe { self.data.read_guard() },
+			key,
+			_phantom: PhantomData,
+		}
+	}
+
+	pub fn try_read<'key: 'a, Key: Keyable + 'key>(
+		&'a self,
+		key: Key,
+	) -> Option<LockGuard<'key, L::ReadGuard<'a>, Key>> {
+		let guard = unsafe {
+			for (i, lock) in self.locks.iter().enumerate() {
+				// safety: we have the thread key
+				let success = lock.try_read();
+
+				if !success {
+					for lock in &self.locks[0..i] {
+						// safety: this lock was already acquired
+						lock.unlock_read();
+					}
+					return None;
+				}
+			}
+
+			// safety: we've acquired the locks
+			self.data.read_guard()
+		};
+
+		Some(LockGuard {
+			guard,
+			key,
+			_phantom: PhantomData,
+		})
+	}
+
+	#[allow(clippy::missing_const_for_fn)]
+	pub fn unlock_read<'key: 'a, Key: Keyable + 'key>(
+		guard: LockGuard<'key, L::ReadGuard<'a>, Key>,
+	) -> Key {
+		drop(guard.guard);
+		guard.key
+	}
+}
+
 impl<'a, L: 'a> RefLockCollection<'a, L>
 where
 	&'a L: IntoIterator,
