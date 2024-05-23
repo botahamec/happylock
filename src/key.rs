@@ -7,6 +7,8 @@ use thread_local::ThreadLocal;
 
 use sealed::Sealed;
 
+// Sealed to prevent other key types from being implemented. Otherwise, this
+// would almost instant undefined behavior.
 mod sealed {
 	use super::ThreadKey;
 
@@ -15,6 +17,9 @@ mod sealed {
 	impl Sealed for &mut ThreadKey {}
 }
 
+// I am concerned that having multiple crates linked together with different
+// static variables could break my key system. Library code probably shouldn't
+// be creating keys at all.
 static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
 
 /// The key for the current thread.
@@ -34,6 +39,7 @@ pub struct ThreadKey {
 /// values invalid.
 pub unsafe trait Keyable: Sealed {}
 unsafe impl Keyable for ThreadKey {}
+// the ThreadKey can't be moved while a mutable reference to it exists
 unsafe impl Keyable for &mut ThreadKey {}
 
 impl Debug for ThreadKey {
@@ -42,6 +48,7 @@ impl Debug for ThreadKey {
 	}
 }
 
+// If you lose the thread key, you can get it back by calling ThreadKey::get
 impl Drop for ThreadKey {
 	fn drop(&mut self) {
 		unsafe { KEY.get().unwrap().force_unlock() }

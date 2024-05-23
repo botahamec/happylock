@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
 use crate::Keyable;
 
-use super::{LockGuard, RefLockCollection};
+use super::{utils, LockGuard, RefLockCollection};
 
 #[must_use]
 pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
@@ -221,17 +221,8 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::Guard<'a>, Key>> {
 		let guard = unsafe {
-			for (i, lock) in self.locks.iter().enumerate() {
-				// safety: we have the thread key
-				let success = lock.try_lock();
-
-				if !success {
-					for lock in &self.locks[0..i] {
-						// safety: this lock was already acquired
-						lock.unlock();
-					}
-					return None;
-				}
+			if !utils::ordered_try_lock(&self.locks) {
+				return None;
 			}
 
 			// safety: we've acquired the locks
@@ -339,17 +330,8 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::ReadGuard<'a>, Key>> {
 		let guard = unsafe {
-			for (i, lock) in self.locks.iter().enumerate() {
-				// safety: we have the thread key
-				let success = lock.try_read();
-
-				if !success {
-					for lock in &self.locks[0..i] {
-						// safety: this lock was already acquired
-						lock.unlock_read();
-					}
-					return None;
-				}
+			if !utils::ordered_try_read(&self.locks) {
+				return None;
 			}
 
 			// safety: we've acquired the locks

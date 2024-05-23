@@ -7,6 +7,7 @@ mod guard;
 mod owned;
 mod r#ref;
 mod retry;
+mod utils;
 
 /// Locks a collection of locks, which cannot be shared immutably.
 ///
@@ -24,6 +25,9 @@ mod retry;
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
+
+// this type caches the idea that no immutable references to the underlying
+// collection exist
 #[derive(Debug)]
 pub struct OwnedLockCollection<L> {
 	data: L,
@@ -47,6 +51,13 @@ pub struct OwnedLockCollection<L> {
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
+
+// This type was born when I eventually realized that I needed a self
+// referential structure. That used boxing, so I elected to make a more
+// efficient implementation (polonius please save us)
+
+// This type caches the sorting order of the locks and the fact that it doesn't
+// contain any duplicates.
 pub struct RefLockCollection<'a, L> {
 	data: &'a L,
 	locks: Vec<&'a dyn RawLock>,
@@ -70,9 +81,14 @@ pub struct RefLockCollection<'a, L> {
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
+
+// This type caches the sorting order of the locks and the fact that it doesn't
+// contain any duplicates.
 pub struct BoxedLockCollection<L> {
 	data: Box<L>,
-	locks: Vec<&'static dyn RawLock>,
+	locks: Vec<&'static dyn RawLock>, // As far as you know, it's static.
+	                                  // Believe it or not, saying the lifetime
+	                                  // is static when it's not isn't UB
 }
 
 /// Locks a collection of locks using a retrying algorithm.
@@ -97,6 +113,8 @@ pub struct BoxedLockCollection<L> {
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
 /// [livelocking]: https://en.wikipedia.org/wiki/Deadlock#Livelock
+
+// This type caches the fact that there are no duplicates
 #[derive(Debug)]
 pub struct RetryingLockCollection<L> {
 	data: L,

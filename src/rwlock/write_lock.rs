@@ -11,7 +11,9 @@ impl<'l, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'l, T, R> {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
 		//         or any other threads
-		if let Some(value) = unsafe { self.try_lock_no_key() } {
+		// It makes zero sense to try using an exclusive lock for this, so this
+		// is the only time when WriteLock does a read.
+		if let Some(value) = unsafe { self.0.try_read_no_key() } {
 			f.debug_struct("WriteLock").field("data", &&*value).finish()
 		} else {
 			struct LockedPlaceholder;
@@ -75,11 +77,8 @@ impl<'l, T: ?Sized, R: RawRwLock> WriteLock<'l, T, R> {
 		self.0.try_write(key)
 	}
 
-	/// Attempts to create an exclusive lock without a key. Locking this
-	/// without exclusive access to the key is undefined behavior.
-	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
-		self.0.try_write_no_key()
-	}
+	// There's no `try_lock_no_key`. Instead, `try_read_no_key` is called on
+	// the referenced `RwLock`.
 
 	/// Immediately drops the guard, and consequently releases the exclusive
 	/// lock.

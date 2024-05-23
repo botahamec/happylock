@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
 use crate::Keyable;
 
-use super::{BoxedLockCollection, LockGuard};
+use super::{utils, BoxedLockCollection, LockGuard};
 
 /// returns `true` if the sorted list contains a duplicate
 #[must_use]
@@ -185,6 +185,8 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		let data = Box::new(data);
 		let mut locks = Vec::new();
 		data.get_ptrs(&mut locks);
+
+		// cast to *const () because fat pointers can't be converted to usize
 		locks.sort_by_key(|lock| std::ptr::from_ref(*lock).cast::<()>() as usize);
 
 		// safety: the box will be dropped after the lock references, so it's
@@ -310,17 +312,8 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::Guard<'g>, Key>> {
 		let guard = unsafe {
-			for (i, lock) in self.locks.iter().enumerate() {
-				// safety: we have the thread key
-				let success = lock.try_lock();
-
-				if !success {
-					for lock in &self.locks[0..i] {
-						// safety: this lock was already acquired
-						lock.unlock();
-					}
-					return None;
-				}
+			if !utils::ordered_try_lock(&self.locks) {
+				return None;
 			}
 
 			// safety: we've acquired the locks
@@ -424,17 +417,8 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>> {
 		let guard = unsafe {
-			for (i, lock) in self.locks.iter().enumerate() {
-				// safety: we have the thread key
-				let success = lock.try_read();
-
-				if !success {
-					for lock in &self.locks[0..i] {
-						// safety: this lock was already acquired
-						lock.unlock_read();
-					}
-					return None;
-				}
+			if !utils::ordered_try_read(&self.locks) {
+				return None;
 			}
 
 			// safety: we've acquired the locks

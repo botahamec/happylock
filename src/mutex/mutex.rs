@@ -48,6 +48,7 @@ impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
 		//         or any other threads
+		// when i implement try_clone this code will become less unsafe
 		if let Some(value) = unsafe { self.try_lock_no_key() } {
 			f.debug_struct("Mutex").field("data", &&*value).finish()
 		} else {
@@ -77,6 +78,9 @@ impl<T, R: RawMutex> From<T> for Mutex<T, R> {
 	}
 }
 
+// We don't need a `get_mut` because we don't have mutex poisoning. Hurray!
+// This is safe because you can't have a mutable reference to the lock if it's
+// locked. Being locked requires an immutable reference because of the guard.
 impl<T: ?Sized, R> AsMut<T> for Mutex<T, R> {
 	fn as_mut(&mut self) -> &mut T {
 		self.get_mut()

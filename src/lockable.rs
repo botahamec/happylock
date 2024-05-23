@@ -14,6 +14,13 @@ use lock_api::{RawMutex, RawRwLock};
 /// A deadlock must never occur. The `unlock` method must correctly unlock the
 /// data. The `get_ptrs` method must be implemented correctly. The `Output`
 /// must be unlocked when it is dropped.
+
+// Why not use a RawRwLock? Because that would be semantically incorrect, and I
+// don't want an INIT or GuardMarker associated item.
+// Originally, RawLock had a sister trait: RawSharableLock. I removed it
+// because it'd be difficult to implement a separate type that takes a
+// different kind of RawLock. But now the Sharable marker trait is needed to
+// indicate if reads can be used.
 pub unsafe trait RawLock: Send + Sync {
 	/// Blocks until the lock is acquired
 	///
@@ -175,6 +182,8 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> RawLock for Mutex<T, R> {
 		self.raw().unlock()
 	}
 
+	// this is the closest thing to a read we can get, but Sharable isn't
+	// implemented for this
 	unsafe fn read(&self) {
 		self.raw().lock()
 	}
@@ -291,7 +300,12 @@ unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'l, 
 	}
 }
 
+// Technically, the exclusive locks can also be shared, but there's currently
+// no way to express that. I don't think I want to ever express that.
 unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'l, T, R> {}
+
+// Because both ReadLock and WriteLock hold references to RwLocks, they can't
+// implement OwnedLockable
 
 unsafe impl<T: Lockable> Lockable for &T {
 	type Guard<'g> = T::Guard<'g> where Self: 'g;
@@ -335,6 +349,8 @@ unsafe impl<T: Sharable> Sharable for &mut T {}
 
 unsafe impl<T: OwnedLockable> OwnedLockable for &mut T {}
 
+/// Implements `Lockable`, `Sharable`, and `OwnedLockable` for tuples
+/// ex: `tuple_impls!(A B C, 0 1 2);`
 macro_rules! tuple_impls {
 	($($generic:ident)*, $($value:tt)*) => {
 		unsafe impl<$($generic: Lockable,)*> Lockable for ($($generic,)*) {
@@ -347,6 +363,8 @@ macro_rules! tuple_impls {
 			}
 
 			unsafe fn guard(&self) -> Self::Guard<'_> {
+				// It's weird that this works
+				// I don't think any other way of doing it compiles
 				($(self.$value.guard(),)*)
 			}
 
@@ -381,6 +399,8 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 	}
 
 	unsafe fn guard<'g>(&'g self) -> Self::Guard<'g> {
+		// The MaybeInit helper functions for arrays aren't stable yet, so
+		// we'll just have to implement it ourselves
 		let mut guards = MaybeUninit::<[MaybeUninit<T::Guard<'g>>; N]>::uninit().assume_init();
 		for i in 0..N {
 			guards[i].write(self[i].guard());
@@ -430,7 +450,8 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 }
 
 unsafe impl<T: Lockable> Lockable for Vec<T> {
-	type Guard<'g> = Vec<T::Guard<'g>> where Self: 'g;
+	// There's no reason why I'd ever want to extend a list of lock guards
+	type Guard<'g> = Box<[T::Guard<'g>]> where Self: 'g;
 
 	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
 
@@ -446,7 +467,7 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 			guards.push(lock.guard());
 		}
 
-		guards
+		guards.into_boxed_slice()
 	}
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
@@ -458,6 +479,9 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 		guards.into_boxed_slice()
 	}
 }
+
+// I'd make a generic impl<T: Lockable, I: IntoIterator<Item=T>> Lockable for I
+// but I think that'd require sealing up this trait
 
 unsafe impl<T: Sharable, const N: usize> Sharable for [T; N] {}
 unsafe impl<T: Sharable> Sharable for Box<[T]> {}

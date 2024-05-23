@@ -176,6 +176,9 @@ pub use key::{Keyable, ThreadKey};
 #[cfg(feature = "spin")]
 pub use mutex::SpinLock;
 
+// Personally, I think re-exports look ugly in the rust documentation, so I
+// went with type aliases instead.
+
 /// A collection of locks that can be acquired simultaneously.
 ///
 /// This re-exports [`BoxedLockCollection`] as a sensible default.
