@@ -266,17 +266,6 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		}
 	}
 
-	/// Attempts to create an exclusive lock without a key. Locking this
-	/// without exclusive access to the key is undefined behavior.
-	pub(crate) unsafe fn try_write_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
-		if self.raw.try_lock_exclusive() {
-			// safety: the lock is locked first
-			Some(RwLockWriteRef(self, PhantomData))
-		} else {
-			None
-		}
-	}
-
 	/// Unlocks shared access on the `RwLock`. This is undefined behavior is
 	/// the data is still accessible.
 	pub(super) unsafe fn force_unlock_read(&self) {
