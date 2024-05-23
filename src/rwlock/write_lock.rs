@@ -4,7 +4,7 @@ use lock_api::RawRwLock;
 
 use crate::key::Keyable;
 
-use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
+use super::{RwLock, RwLockWriteGuard, WriteLock};
 
 impl<'l, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'l, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -5,7 +5,7 @@ use lock_api::RawRwLock;
 
 use crate::key::Keyable;
 
-use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
+use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard};
 
 impl<T, R: RawRwLock> RwLock<T, R> {
 	/// Creates a new instance of an `RwLock<T>` which is unlocked.
