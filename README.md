@@ -48,7 +48,10 @@ let data = data.lock(&mut key);
 println!("{}", *data);
 ```
 
-Unlocking a mutex requires a `ThreadKey` or a mutable reference to `ThreadKey`. Each thread will be allowed to have one key at a time, but no more than that. The `ThreadKey` type is not cloneable or copyable. This means that only one thing can be locked at a time.
+Unlocking a mutex requires a `ThreadKey` or a mutable reference to `ThreadKey`.
+Each thread will be allowed to have one key at a time, but no more than that.
+The `ThreadKey` type is not cloneable or copyable. This means that only one
+thing can be locked at a time.
 
 To lock multiple mutexes at a time, create a `LockCollection`.
 
@@ -76,7 +79,8 @@ println!("{}", *data.0);
 println!("{}", *data.1);
 ```
 
-In many cases, the [`LockCollection::new`] or [`LockCollection::new_ref`] method can be used, improving performance.
+In many cases, the [`LockCollection::new`] or [`LockCollection::new_ref`]
+method can be used, improving performance.
 
 ```rust
 use std::thread;

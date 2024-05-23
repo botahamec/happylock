@@ -311,6 +311,8 @@ unsafe impl<T: Lockable> Lockable for &T {
 	}
 }
 
+unsafe impl<T: Sharable> Sharable for &T {}
+
 unsafe impl<T: Lockable> Lockable for &mut T {
 	type Guard<'g> = T::Guard<'g> where Self: 'g;
 
@@ -329,323 +331,43 @@ unsafe impl<T: Lockable> Lockable for &mut T {
 	}
 }
 
+unsafe impl<T: Sharable> Sharable for &mut T {}
+
 unsafe impl<T: OwnedLockable> OwnedLockable for &mut T {}
 
-unsafe impl<A: Lockable> Lockable for (A,) {
-	type Guard<'g> = (A::Guard<'g>,) where Self: 'g;
+macro_rules! tuple_impls {
+	($($generic:ident)*, $($value:tt)*) => {
+		unsafe impl<$($generic: Lockable,)*> Lockable for ($($generic,)*) {
+			type Guard<'g> = ($($generic::Guard<'g>,)*) where Self: 'g;
 
-	type ReadGuard<'g> = (A::ReadGuard<'g>,) where Self: 'g;
+			type ReadGuard<'g> = ($($generic::ReadGuard<'g>,)*) where Self: 'g;
 
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-	}
+			fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+				self.0.get_ptrs(ptrs);
+			}
 
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(self.0.guard(),)
-	}
+			unsafe fn guard(&self) -> Self::Guard<'_> {
+				($(self.$value.guard(),)*)
+			}
 
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(self.0.read_guard(),)
-	}
+			unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+				($(self.$value.read_guard(),)*)
+			}
+		}
+
+		unsafe impl<$($generic: Sharable,)*> Sharable for ($($generic,)*) {}
+
+		unsafe impl<$($generic: OwnedLockable,)*> OwnedLockable for ($($generic,)*) {}
+	};
 }
 
-unsafe impl<A: Lockable, B: Lockable> Lockable for (A, B) {
-	type Guard<'g> = (A::Guard<'g>, B::Guard<'g>) where Self: 'g;
-
-	type ReadGuard<'g> = (A::ReadGuard<'g>, B::ReadGuard<'g>) where Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-		self.1.get_ptrs(ptrs);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(self.0.guard(), self.1.guard())
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(self.0.read_guard(), self.1.read_guard())
-	}
-}
-
-unsafe impl<A: Lockable, B: Lockable, C: Lockable> Lockable for (A, B, C) {
-	type Guard<'g> = (A::Guard<'g>, B::Guard<'g>, C::Guard<'g>) where Self: 'g;
-
-	type ReadGuard<'g> = (A::ReadGuard<'g>, B::ReadGuard<'g>, C::ReadGuard<'g>) where Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-		self.1.get_ptrs(ptrs);
-		self.2.get_ptrs(ptrs);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(self.0.guard(), self.1.guard(), self.2.guard())
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(
-			self.0.read_guard(),
-			self.1.read_guard(),
-			self.2.read_guard(),
-		)
-	}
-}
-
-unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable> Lockable for (A, B, C, D) {
-	type Guard<'g> = (A::Guard<'g>, B::Guard<'g>, C::Guard<'g>, D::Guard<'g>) where Self: 'g;
-
-	type ReadGuard<'g> = (
-		A::ReadGuard<'g>,
-		B::ReadGuard<'g>,
-		C::ReadGuard<'g>,
-		D::ReadGuard<'g>,
-	) where Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-		self.1.get_ptrs(ptrs);
-		self.2.get_ptrs(ptrs);
-		self.3.get_ptrs(ptrs);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(
-			self.0.guard(),
-			self.1.guard(),
-			self.2.guard(),
-			self.3.guard(),
-		)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(
-			self.0.read_guard(),
-			self.1.read_guard(),
-			self.2.read_guard(),
-			self.3.read_guard(),
-		)
-	}
-}
-
-unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable> Lockable
-	for (A, B, C, D, E)
-{
-	type Guard<'g> = (
-		A::Guard<'g>,
-		B::Guard<'g>,
-		C::Guard<'g>,
-		D::Guard<'g>,
-		E::Guard<'g>,
-	) where Self: 'g;
-
-	type ReadGuard<'g> = (
-		A::ReadGuard<'g>,
-		B::ReadGuard<'g>,
-		C::ReadGuard<'g>,
-		D::ReadGuard<'g>,
-		E::ReadGuard<'g>,
-	) where Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-		self.1.get_ptrs(ptrs);
-		self.2.get_ptrs(ptrs);
-		self.3.get_ptrs(ptrs);
-		self.4.get_ptrs(ptrs);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(
-			self.0.guard(),
-			self.1.guard(),
-			self.2.guard(),
-			self.3.guard(),
-			self.4.guard(),
-		)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(
-			self.0.read_guard(),
-			self.1.read_guard(),
-			self.2.read_guard(),
-			self.3.read_guard(),
-			self.4.read_guard(),
-		)
-	}
-}
-
-unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable, F: Lockable> Lockable
-	for (A, B, C, D, E, F)
-{
-	type Guard<'g> = (
-		A::Guard<'g>,
-		B::Guard<'g>,
-		C::Guard<'g>,
-		D::Guard<'g>,
-		E::Guard<'g>,
-		F::Guard<'g>,
-	) where Self: 'g;
-
-	type ReadGuard<'g> = (
-		A::ReadGuard<'g>,
-		B::ReadGuard<'g>,
-		C::ReadGuard<'g>,
-		D::ReadGuard<'g>,
-		E::ReadGuard<'g>,
-		F::ReadGuard<'g>,
-	) where Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-		self.1.get_ptrs(ptrs);
-		self.2.get_ptrs(ptrs);
-		self.3.get_ptrs(ptrs);
-		self.4.get_ptrs(ptrs);
-		self.5.get_ptrs(ptrs);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(
-			self.0.guard(),
-			self.1.guard(),
-			self.2.guard(),
-			self.3.guard(),
-			self.4.guard(),
-			self.5.guard(),
-		)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(
-			self.0.read_guard(),
-			self.1.read_guard(),
-			self.2.read_guard(),
-			self.3.read_guard(),
-			self.4.read_guard(),
-			self.5.read_guard(),
-		)
-	}
-}
-
-unsafe impl<A: Lockable, B: Lockable, C: Lockable, D: Lockable, E: Lockable, F: Lockable, G: Lockable>
-	Lockable for (A, B, C, D, E, F, G)
-{
-	type Guard<'g> = (
-		A::Guard<'g>,
-		B::Guard<'g>,
-		C::Guard<'g>,
-		D::Guard<'g>,
-		E::Guard<'g>,
-		F::Guard<'g>,
-		G::Guard<'g>,
-	) where Self: 'g;
-
-	type ReadGuard<'g> = (
-		A::ReadGuard<'g>,
-		B::ReadGuard<'g>,
-		C::ReadGuard<'g>,
-		D::ReadGuard<'g>,
-		E::ReadGuard<'g>,
-		F::ReadGuard<'g>,
-		G::ReadGuard<'g>,
-	) where Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.0.get_ptrs(ptrs);
-		self.1.get_ptrs(ptrs);
-		self.2.get_ptrs(ptrs);
-		self.3.get_ptrs(ptrs);
-		self.4.get_ptrs(ptrs);
-		self.5.get_ptrs(ptrs);
-		self.6.get_ptrs(ptrs);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		(
-			self.0.guard(),
-			self.1.guard(),
-			self.2.guard(),
-			self.3.guard(),
-			self.4.guard(),
-			self.5.guard(),
-			self.6.guard(),
-		)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(
-			self.0.read_guard(),
-			self.1.read_guard(),
-			self.2.read_guard(),
-			self.3.read_guard(),
-			self.4.read_guard(),
-			self.5.read_guard(),
-			self.6.read_guard(),
-		)
-	}
-}
-
-unsafe impl<A: Sharable> Sharable for (A,) {}
-unsafe impl<A: Sharable, B: Sharable> Sharable for (A, B) {}
-
-unsafe impl<A: Sharable, B: Sharable, C: Sharable> Sharable for (A, B, C) {}
-
-unsafe impl<A: Sharable, B: Sharable, C: Sharable, D: Sharable> Sharable for (A, B, C, D) {}
-
-unsafe impl<A: Sharable, B: Sharable, C: Sharable, D: Sharable, E: Sharable> Sharable
-	for (A, B, C, D, E)
-{
-}
-
-unsafe impl<A: Sharable, B: Sharable, C: Sharable, D: Sharable, E: Sharable, F: Sharable> Sharable
-	for (A, B, C, D, E, F)
-{
-}
-
-unsafe impl<A: Sharable, B: Sharable, C: Sharable, D: Sharable, E: Sharable, F: Sharable, G: Sharable>
-	Sharable for (A, B, C, D, E, F, G)
-{
-}
-
-unsafe impl<A: OwnedLockable> OwnedLockable for (A,) {}
-unsafe impl<A: OwnedLockable, B: OwnedLockable> OwnedLockable for (A, B) {}
-
-unsafe impl<A: OwnedLockable, B: OwnedLockable, C: OwnedLockable> OwnedLockable for (A, B, C) {}
-
-unsafe impl<A: OwnedLockable, B: OwnedLockable, C: OwnedLockable, D: OwnedLockable> OwnedLockable
-	for (A, B, C, D)
-{
-}
-
-unsafe impl<A: OwnedLockable, B: OwnedLockable, C: OwnedLockable, D: OwnedLockable, E: OwnedLockable>
-	OwnedLockable for (A, B, C, D, E)
-{
-}
-
-unsafe impl<
-		A: OwnedLockable,
-		B: OwnedLockable,
-		C: OwnedLockable,
-		D: OwnedLockable,
-		E: OwnedLockable,
-		F: OwnedLockable,
-	> OwnedLockable for (A, B, C, D, E, F)
-{
-}
-
-unsafe impl<
-		A: OwnedLockable,
-		B: OwnedLockable,
-		C: OwnedLockable,
-		D: OwnedLockable,
-		E: OwnedLockable,
-		F: OwnedLockable,
-		G: OwnedLockable,
-	> OwnedLockable for (A, B, C, D, E, F, G)
-{
-}
+tuple_impls!(A, 0);
+tuple_impls!(A B, 0 1);
+tuple_impls!(A B C, 0 1 2);
+tuple_impls!(A B C D, 0 1 2 3);
+tuple_impls!(A B C D E, 0 1 2 3 4);
+tuple_impls!(A B C D E F, 0 1 2 3 4 5);
+tuple_impls!(A B C D E F G, 0 1 2 3 4 5 6);
 
 unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 	type Guard<'g> = [T::Guard<'g>; N] where Self: 'g;

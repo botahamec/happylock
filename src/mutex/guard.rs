@@ -61,7 +61,9 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> AsMut<T> for MutexRef<'a, T, R> {
 }
 
 impl<'a, T: ?Sized + 'a, R: RawMutex> MutexRef<'a, T, R> {
-	pub unsafe fn new(mutex: &'a Mutex<T, R>) -> Self {
+	/// Creates a reference to the underlying data of a mutex without
+	/// attempting to lock it or take ownership of the key.
+	pub(crate) unsafe fn new(mutex: &'a Mutex<T, R>) -> Self {
 		Self(mutex, PhantomData)
 	}
 }

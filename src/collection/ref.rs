@@ -82,10 +82,11 @@ impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 	/// # Examples
 	///
 	/// ```
-	/// use happylock::{LockCollection, Mutex};
+	/// use happylock::Mutex;
+	/// use happylock::collection::RefLockCollection;
 	///
 	/// let data = (Mutex::new(0), Mutex::new(""));
-	/// let lock = LockCollection::new(&data);
+	/// let lock = RefLockCollection::new(&data);
 	/// ```
 	#[must_use]
 	pub fn new(data: &'a L) -> RefLockCollection<L> {
@@ -107,13 +108,15 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// # Examples
 	///
 	/// ```
-	/// use happylock::{LockCollection, Mutex};
+	/// use happylock::Mutex;
+	/// use happylock::collection::RefLockCollection;
 	///
 	/// let data1 = Mutex::new(0);
 	/// let data2 = Mutex::new("");
 	///
 	/// // safety: data1 and data2 refer to distinct mutexes
-	/// let lock = unsafe { LockCollection::new_unchecked((&data1, &data2)) };
+	/// let data = (&data1, &data2);
+	/// let lock = unsafe { RefLockCollection::new_unchecked(&data) };
 	/// ```
 	#[must_use]
 	pub unsafe fn new_unchecked(data: &'a L) -> Self {
@@ -131,13 +134,15 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// # Examples
 	///
 	/// ```
-	/// use happylock::{LockCollection, Mutex};
+	/// use happylock::Mutex;
+	/// use happylock::collection::RefLockCollection;
 	///
 	/// let data1 = Mutex::new(0);
 	/// let data2 = Mutex::new("");
 	///
 	/// // data1 and data2 refer to distinct mutexes, so this won't panic
-	/// let lock = LockCollection::try_new((&data1, &data2)).unwrap();
+	/// let data = (&data1, &data2);
+	/// let lock = RefLockCollection::try_new(&data).unwrap();
 	/// ```
 	#[must_use]
 	pub fn try_new(data: &'a L) -> Option<Self> {
@@ -158,10 +163,12 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// # Examples
 	///
 	/// ```
-	/// use happylock::{LockCollection, Mutex, ThreadKey};
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = RefLockCollection::new(&data);
 	///
 	/// let mut guard = lock.lock(key);
 	/// *guard.0 += 1;
@@ -193,10 +200,12 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// # Examples
 	///
 	/// ```
-	/// use happylock::{LockCollection, Mutex, ThreadKey};
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = RefLockCollection::new(&data);
 	///
 	/// match lock.try_lock(key) {
 	///     Some(mut guard) => {
@@ -242,15 +251,17 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// # Examples
 	///
 	/// ```
-	/// use happylock::{LockCollection, Mutex, ThreadKey};
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock = LockCollection::new((Mutex::new(0), Mutex::new("")));
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = RefLockCollection::new(&data);
 	///
 	/// let mut guard = lock.lock(key);
 	/// *guard.0 += 1;
 	/// *guard.1 = "1";
-	/// let key = LockCollection::unlock(guard);
+	/// let key = RefLockCollection::<(Mutex<i32>, Mutex<&str>)>::unlock(guard);
 	/// ```
 	#[allow(clippy::missing_const_for_fn)]
 	pub fn unlock<'key: 'a, Key: Keyable + 'key>(guard: LockGuard<'key, L::Guard<'a>, Key>) -> Key {
@@ -260,6 +271,26 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 }
 
 impl<'a, L: Sharable> RefLockCollection<'a, L> {
+	/// Locks the collection, so that other threads can still read from it
+	///
+	/// This function returns a guard that can be used to access the underlying
+	/// data immutably. When the guard is dropped, the locks in the collection
+	/// are also dropped.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (RwLock::new(0), RwLock::new(""));
+	/// let lock = RefLockCollection::new(&data);
+	///
+	/// let mut guard = lock.read(key);
+	/// assert_eq!(*guard.0, 0);
+	/// assert_eq!(*guard.1, "");
+	/// ```
 	pub fn read<'key: 'a, Key: Keyable + 'key>(
 		&'a self,
 		key: Key,
@@ -277,6 +308,32 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 		}
 	}
 
+	/// Attempts to lock the without blocking, in such a way that other threads
+	/// can still read from the collection.
+	///
+	/// If successful, this method returns a guard that can be used to access
+	/// the data immutably, and unlocks the data when it is dropped. Otherwise,
+	/// `None` is returned.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (RwLock::new(5), RwLock::new("6"));
+	/// let lock = RefLockCollection::new(&data);
+	///
+	/// match lock.try_read(key) {
+	///     Some(mut guard) => {
+	///         assert_eq!(*guard.0, 5);
+	///         assert_eq!(*guard.1, "6");
+	///     },
+	///     None => unreachable!(),
+	/// };
+	///
+	/// ```
 	pub fn try_read<'key: 'a, Key: Keyable + 'key>(
 		&'a self,
 		key: Key,
@@ -306,6 +363,22 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 		})
 	}
 
+	/// Unlocks the underlying lockable data type, returning the key that's
+	/// associated with it.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (RwLock::new(0), RwLock::new(""));
+	/// let lock = RefLockCollection::new(&data);
+	///
+	/// let mut guard = lock.read(key);
+	/// let key = RefLockCollection::<(RwLock<i32>, RwLock<&str>)>::unlock_read(guard);
+	/// ```
 	#[allow(clippy::missing_const_for_fn)]
 	pub fn unlock_read<'key: 'a, Key: Keyable + 'key>(
 		guard: LockGuard<'key, L::ReadGuard<'a>, Key>,
@@ -320,6 +393,23 @@ where
 	&'a L: IntoIterator,
 {
 	/// Returns an iterator over references to each value in the collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = [Mutex::new(26), Mutex::new(1)];
+	/// let lock = RefLockCollection::new(&data);
+	///
+	/// let mut iter = lock.iter();
+	/// let mutex = iter.next().unwrap();
+	/// let guard = mutex.lock(key);
+	///
+	/// assert_eq!(*guard, 26);
+	/// ```
 	#[must_use]
 	pub fn iter(&'a self) -> <&'a L as IntoIterator>::IntoIter {
 		self.into_iter()

@@ -119,6 +119,19 @@ impl<L: OwnedLockable + Default> From<L> for BoxedLockCollection<L> {
 }
 
 impl<L: OwnedLockable> BoxedLockCollection<L> {
+	/// Creates a new collection of owned locks.
+	///
+	/// Because the locks are owned, there's no need to do any checks for
+	/// duplicate values.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	///
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = LockCollection::new(data);
+	/// ```
 	#[must_use]
 	pub fn new(data: L) -> Self {
 		// safety: owned lockable types cannot contain duplicates
@@ -127,6 +140,19 @@ impl<L: OwnedLockable> BoxedLockCollection<L> {
 }
 
 impl<'a, L: OwnedLockable> BoxedLockCollection<&'a L> {
+	/// Creates a new collection of owned locks.
+	///
+	/// Because the locks are owned, there's no need to do any checks for
+	/// duplicate values.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	///
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = LockCollection::new_ref(&data);
+	/// ```
 	#[must_use]
 	pub fn new_ref(data: &'a L) -> Self {
 		// safety: owned lockable types cannot contain duplicates
@@ -135,11 +161,31 @@ impl<'a, L: OwnedLockable> BoxedLockCollection<&'a L> {
 }
 
 impl<L: Lockable> BoxedLockCollection<L> {
+	/// Creates a new collections of locks.
+	///
+	/// # Safety
+	///
+	/// This results in undefined behavior if any locks are presented twice
+	/// within this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	///
+	/// let data1 = Mutex::new(0);
+	/// let data2 = Mutex::new("");
+	///
+	/// // safety: data1 and data2 refer to distinct mutexes
+	/// let data = (&data1, &data2);
+	/// let lock = unsafe { LockCollection::new_unchecked(&data) };
+	/// ```
 	#[must_use]
 	pub unsafe fn new_unchecked(data: L) -> Self {
 		let data = Box::new(data);
 		let mut locks = Vec::new();
 		data.get_ptrs(&mut locks);
+		locks.sort_by_key(|lock| std::ptr::from_ref(*lock).cast::<()>() as usize);
 
 		// safety: the box will be dropped after the lock references, so it's
 		//         safe to just pretend they're static
@@ -147,6 +193,23 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		Self { data, locks }
 	}
 
+	/// Creates a new collection of locks.
+	///
+	/// This returns `None` if any locks are found twice in the given
+	/// collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	///
+	/// let data1 = Mutex::new(0);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let data = (&data1, &data2);
+	/// let lock = LockCollection::try_new(&data).unwrap();
+	/// ```
 	#[must_use]
 	pub fn try_new(data: L) -> Option<Self> {
 		// safety: we are checking for duplicates before returning
@@ -159,11 +222,48 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		}
 	}
 
+	/// Gets the underlying collection, consuming this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let data1 = Mutex::new(42);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let data = (&data1, &data2);
+	/// let lock = LockCollection::try_new(&data).unwrap();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let guard = lock.into_inner().0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
 	#[must_use]
 	pub fn into_inner(self) -> Box<L> {
 		self.data
 	}
 
+	/// Locks the collection
+	///
+	/// This function returns a guard that can be used to access the underlying
+	/// data. When the guard is dropped, the locks in the collection are also
+	/// dropped.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = LockCollection::new(data);
+	///
+	/// let mut guard = lock.lock(key);
+	/// *guard.0 += 1;
+	/// *guard.1 = "1";
+	/// ```
 	pub fn lock<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
@@ -181,6 +281,30 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		}
 	}
 
+	/// Attempts to lock the without blocking.
+	///
+	/// If successful, this method returns a guard that can be used to access
+	/// the data, and unlocks the data when it is dropped. Otherwise, `None` is
+	/// returned.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = LockCollection::new(data);
+	///
+	/// match lock.try_lock(key) {
+	///     Some(mut guard) => {
+	///         *guard.0 += 1;
+	///         *guard.1 = "1";
+	///     },
+	///     None => unreachable!(),
+	/// };
+	///
+	/// ```
 	pub fn try_lock<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
@@ -210,6 +334,23 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		})
 	}
 
+	/// Unlocks the underlying lockable data type, returning the key that's
+	/// associated with it.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (Mutex::new(0), Mutex::new(""));
+	/// let lock = LockCollection::new(data);
+	///
+	/// let mut guard = lock.lock(key);
+	/// *guard.0 += 1;
+	/// *guard.1 = "1";
+	/// let key = LockCollection::<(Mutex<i32>, Mutex<&str>)>::unlock(guard);
+	/// ```
 	pub fn unlock<'key, Key: Keyable + 'key>(guard: LockGuard<'key, L::Guard<'_>, Key>) -> Key {
 		drop(guard.guard);
 		guard.key
@@ -217,6 +358,25 @@ impl<L: Lockable> BoxedLockCollection<L> {
 }
 
 impl<L: Sharable> BoxedLockCollection<L> {
+	/// Locks the collection, so that other threads can still read from it
+	///
+	/// This function returns a guard that can be used to access the underlying
+	/// data immutably. When the guard is dropped, the locks in the collection
+	/// are also dropped.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (RwLock::new(0), RwLock::new(""));
+	/// let lock = LockCollection::new(data);
+	///
+	/// let mut guard = lock.read(key);
+	/// assert_eq!(*guard.0, 0);
+	/// assert_eq!(*guard.1, "");
+	/// ```
 	pub fn read<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
@@ -234,6 +394,31 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		}
 	}
 
+	/// Attempts to lock the without blocking, in such a way that other threads
+	/// can still read from the collection.
+	///
+	/// If successful, this method returns a guard that can be used to access
+	/// the data immutably, and unlocks the data when it is dropped. Otherwise,
+	/// `None` is returned.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (RwLock::new(5), RwLock::new("6"));
+	/// let lock = LockCollection::new(data);
+	///
+	/// match lock.try_read(key) {
+	///     Some(mut guard) => {
+	///         assert_eq!(*guard.0, 5);
+	///         assert_eq!(*guard.1, "6");
+	///     },
+	///     None => unreachable!(),
+	/// };
+	///
+	/// ```
 	pub fn try_read<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
@@ -263,6 +448,21 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		})
 	}
 
+	/// Unlocks the underlying lockable data type, returning the key that's
+	/// associated with it.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = (RwLock::new(0), RwLock::new(""));
+	/// let lock = LockCollection::new(data);
+	///
+	/// let mut guard = lock.read(key);
+	/// let key = LockCollection::<(RwLock<i32>, RwLock<&str>)>::unlock_read(guard);
+	/// ```
 	pub fn unlock_read<'key, Key: Keyable + 'key>(
 		guard: LockGuard<'key, L::ReadGuard<'_>, Key>,
 	) -> Key {
@@ -276,6 +476,22 @@ where
 	&'a L: IntoIterator,
 {
 	/// Returns an iterator over references to each value in the collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = [Mutex::new(26), Mutex::new(1)];
+	/// let lock = LockCollection::new(data);
+	///
+	/// let mut iter = lock.iter();
+	/// let mutex = iter.next().unwrap();
+	/// let guard = mutex.lock(key);
+	///
+	/// assert_eq!(*guard, 26);
+	/// ```
 	#[must_use]
 	pub fn iter(&'a self) -> <&'a L as IntoIterator>::IntoIter {
 		self.into_iter()
@@ -288,6 +504,21 @@ where
 {
 	/// Returns an iterator over mutable references to each value in the
 	/// collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let data = [Mutex::new(26), Mutex::new(1)];
+	/// let mut lock = LockCollection::new(data);
+	///
+	/// let mut iter = lock.iter_mut();
+	/// let mutex = iter.next().unwrap();
+	///
+	/// assert_eq!(*mutex.as_mut(), 26);
+	/// ```
 	#[must_use]
 	pub fn iter_mut(&'a mut self) -> <&'a mut L as IntoIterator>::IntoIter {
 		self.into_iter()

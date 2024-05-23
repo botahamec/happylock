@@ -36,7 +36,7 @@ impl<'l, T, R> From<&'l RwLock<T, R>> for ReadLock<'l, T, R> {
 
 impl<'l, T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'l, T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
-		&self.0
+		self.0
 	}
 }
 

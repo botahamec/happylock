@@ -103,6 +103,8 @@ pub struct RetryingLockCollection<L> {
 }
 
 /// A RAII guard for a generic [`Lockable`] type.
+///
+/// [`Lockable`]: `crate::lockable::Lockable`
 pub struct LockGuard<'key, Guard, Key: Keyable + 'key> {
 	guard: Guard,
 	key: Key,
