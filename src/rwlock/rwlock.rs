@@ -76,7 +76,7 @@ impl<T, R: RawRwLock> From<T> for RwLock<T, R> {
 
 impl<T: ?Sized, R> AsMut<T> for RwLock<T, R> {
 	fn as_mut(&mut self) -> &mut T {
-		self.get_mut()
+		self.data.get_mut()
 	}
 }
 
@@ -96,29 +96,9 @@ impl<T, R> RwLock<T, R> {
 	/// }
 	/// assert_eq!(lock.into_inner(), "modified");
 	/// ```
+	#[must_use]
 	pub fn into_inner(self) -> T {
 		self.data.into_inner()
-	}
-}
-
-impl<T: ?Sized, R> RwLock<T, R> {
-	/// Returns a mutable reference to the underlying data.
-	///
-	/// Since this call borrows the `RwLock` mutably, no actual locking needs
-	/// to take place. The mutable borrow statically guarantees no locks exist.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{RwLock, ThreadKey};
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let mut lock = RwLock::new(0);
-	/// *lock.get_mut() = 10;
-	/// assert_eq!(*lock.read(key), 10);
-	/// ```
-	pub fn get_mut(&mut self) -> &mut T {
-		self.data.get_mut()
 	}
 }
 

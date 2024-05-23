@@ -48,6 +48,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> Drop for RwLockReadRef<'a, T, R> {
 impl<'a, T: ?Sized + 'a, R: RawRwLock> RwLockReadRef<'a, T, R> {
 	/// Creates an immutable reference for the underlying data of an [`RwLock`]
 	/// without locking it or taking ownership of the key.
+	#[must_use]
 	pub(crate) unsafe fn new(mutex: &'a RwLock<T, R>) -> Self {
 		Self(mutex, PhantomData)
 	}
