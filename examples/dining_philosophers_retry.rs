@@ -51,7 +51,7 @@ impl Philosopher {
 
 		// safety: no philosopher asks for the same fork twice
 		let forks = [&FORKS[self.left], &FORKS[self.right]];
-		let forks = unsafe { collection::RefLockCollection::new_unchecked(&forks) };
+		let forks = unsafe { collection::RetryingLockCollection::new_unchecked(&forks) };
 		let forks = forks.lock(key);
 		println!("{} is eating...", self.name);
 		thread::sleep(Duration::from_secs(1));
