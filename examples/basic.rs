@@ -23,5 +23,5 @@ fn main() {
 
 	let key = ThreadKey::get().unwrap();
 	let data = DATA.lock(key);
-	println!("{}", *data);
+	println!("{data}");
 }

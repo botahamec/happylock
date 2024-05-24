@@ -24,11 +24,22 @@ impl<T, R: RawMutex> Mutex<T, R> {
 			data: UnsafeCell::new(data),
 		}
 	}
-}
 
-impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
-	fn default() -> Self {
-		Self::new(T::default())
+	/// Returns the raw underlying mutex.
+	///
+	/// Note that you will most likely need to import the [`RawMutex`] trait
+	/// from `lock_api` to be able to call functions on the raw mutex.
+	///
+	/// # Safety
+	///
+	/// This method is unsafe because it allows unlocking a mutex while still
+	/// holding a reference to a [`MutexGuard`], and locking a mutex without
+	/// holding the [`ThreadKey`].
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
+	#[must_use]
+	pub const unsafe fn raw(&self) -> &R {
+		&self.raw
 	}
 }
 
@@ -37,6 +48,7 @@ impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
 		//         or any other threads
+		// when i implement try_clone this code will become less unsafe
 		if let Some(value) = unsafe { self.try_lock_no_key() } {
 			f.debug_struct("Mutex").field("data", &&*value).finish()
 		} else {
@@ -54,12 +66,21 @@ impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 	}
 }
 
+impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
+	fn default() -> Self {
+		Self::new(T::default())
+	}
+}
+
 impl<T, R: RawMutex> From<T> for Mutex<T, R> {
 	fn from(value: T) -> Self {
 		Self::new(value)
 	}
 }
 
+// We don't need a `get_mut` because we don't have mutex poisoning. Hurray!
+// This is safe because you can't have a mutable reference to the lock if it's
+// locked. Being locked requires an immutable reference because of the guard.
 impl<T: ?Sized, R> AsMut<T> for Mutex<T, R> {
 	fn as_mut(&mut self) -> &mut T {
 		self.get_mut()
@@ -136,15 +157,6 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 			// safety: we just locked the mutex
 			MutexGuard::new(self, key)
 		}
-	}
-
-	/// Lock without a [`ThreadKey`]. You must exclusively own the
-	/// [`ThreadKey`] as long as the [`MutexRef`] is alive. This may cause
-	/// deadlock if called multiple times without unlocking first.
-	pub(crate) unsafe fn lock_no_key(&self) -> MutexRef<'_, T, R> {
-		self.raw.lock();
-
-		MutexRef(self, PhantomData)
 	}
 
 	/// Attempts to lock the `Mutex` without blocking.

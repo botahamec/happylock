@@ -4,14 +4,16 @@ use lock_api::RawRwLock;
 
 use crate::key::Keyable;
 
-use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
+use super::{RwLock, RwLockWriteGuard, WriteLock};
 
-impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'a, T, R> {
+impl<'l, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'l, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
 		//         or any other threads
-		if let Some(value) = unsafe { self.try_lock_no_key() } {
+		// It makes zero sense to try using an exclusive lock for this, so this
+		// is the only time when WriteLock does a read.
+		if let Some(value) = unsafe { self.0.try_read_no_key() } {
 			f.debug_struct("WriteLock").field("data", &&*value).finish()
 		} else {
 			struct LockedPlaceholder;
@@ -21,26 +23,26 @@ impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'a, T, R> {
 				}
 			}
 
-			f.debug_struct("ReadLock")
+			f.debug_struct("WriteLock")
 				.field("data", &LockedPlaceholder)
 				.finish()
 		}
 	}
 }
 
-impl<'a, T: ?Sized, R> From<&'a RwLock<T, R>> for WriteLock<'a, T, R> {
-	fn from(value: &'a RwLock<T, R>) -> Self {
+impl<'l, T, R> From<&'l RwLock<T, R>> for WriteLock<'l, T, R> {
+	fn from(value: &'l RwLock<T, R>) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<'a, T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<'a, T, R> {
+impl<'l, T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<'l, T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
 		self.0
 	}
 }
 
-impl<'a, T: ?Sized, R> WriteLock<'a, T, R> {
+impl<'l, T, R> WriteLock<'l, T, R> {
 	/// Creates a new `WriteLock` which accesses the given [`RwLock`]
 	///
 	/// # Examples
@@ -52,12 +54,12 @@ impl<'a, T: ?Sized, R> WriteLock<'a, T, R> {
 	/// let write_lock = WriteLock::new(&lock);
 	/// ```
 	#[must_use]
-	pub const fn new(rwlock: &'a RwLock<T, R>) -> Self {
+	pub const fn new(rwlock: &'l RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
 }
 
-impl<'a, T: ?Sized, R: RawRwLock> WriteLock<'a, T, R> {
+impl<'l, T: ?Sized, R: RawRwLock> WriteLock<'l, T, R> {
 	/// Locks the underlying [`RwLock`] with exclusive write access, blocking
 	/// the current until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
@@ -65,12 +67,6 @@ impl<'a, T: ?Sized, R: RawRwLock> WriteLock<'a, T, R> {
 		key: Key,
 	) -> RwLockWriteGuard<'_, 'key, T, Key, R> {
 		self.0.write(key)
-	}
-
-	/// Creates an exclusive lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn lock_no_key(&self) -> RwLockWriteRef<'_, T, R> {
-		self.0.write_no_key()
 	}
 
 	/// Attempts to lock the underlying [`RwLock`] with exclusive write access.
@@ -81,11 +77,8 @@ impl<'a, T: ?Sized, R: RawRwLock> WriteLock<'a, T, R> {
 		self.0.try_write(key)
 	}
 
-	/// Attempts to create an exclusive lock without a key. Locking this
-	/// without exclusive access to the key is undefined behavior.
-	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
-		self.0.try_write_no_key()
-	}
+	// There's no `try_lock_no_key`. Instead, `try_read_no_key` is called on
+	// the referenced `RwLock`.
 
 	/// Immediately drops the guard, and consequently releases the exclusive
 	/// lock.

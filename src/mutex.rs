@@ -49,32 +49,11 @@ pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
+
+// This is the most lifetime-intensive thing I've ever written. Can I graduate
+// from borrow checker university now?
 pub struct MutexGuard<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> {
-	mutex: MutexRef<'a, T, R>,
+	mutex: MutexRef<'a, T, R>, // this way we don't need to re-implement Drop
 	thread_key: Key,
 	_phantom: PhantomData<&'key ()>,
-}
-
-struct MutexLockFuture<'a, T: ?Sized + 'a, R: RawMutex> {
-	mutex: &'a Mutex<T, R>,
-	key: Option<crate::ThreadKey>,
-}
-
-impl<'a, T: ?Sized + 'a, R: RawMutex> std::future::Future for MutexLockFuture<'a, T, R> {
-	type Output = MutexGuard<'a, 'a, T, crate::ThreadKey, R>;
-
-	fn poll(
-		mut self: std::pin::Pin<&mut Self>,
-		cx: &mut std::task::Context<'_>,
-	) -> std::task::Poll<Self::Output> {
-		match unsafe { self.mutex.try_lock_no_key() } {
-			Some(guard) => std::task::Poll::Ready(unsafe {
-				MutexGuard::new(guard.0, self.key.take().unwrap())
-			}),
-			None => {
-				cx.waker().wake_by_ref();
-				std::task::Poll::Pending
-			}
-		}
-	}
 }

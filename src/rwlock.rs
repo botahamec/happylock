@@ -22,7 +22,7 @@ pub type ParkingRwLock<T> = RwLock<T, parking_lot::RawRwLock>;
 /// A reader-writer lock
 ///
 /// This type of lock allows a number of readers or at most one writer at any
-/// point in time. The write portion of thislock typically allows modification
+/// point in time. The write portion of this lock typically allows modification
 /// of the underlying data (exclusive access) and the read portion of this lock
 /// typically allows for read-only access (shared access).
 ///
@@ -56,7 +56,8 @@ pub struct RwLock<T: ?Sized, R> {
 /// that only read access is needed to the data.
 ///
 /// [`LockCollection`]: `crate::LockCollection`
-pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
+#[repr(transparent)]
+pub struct ReadLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
 
 /// Grants write access to an [`RwLock`]
 ///
@@ -64,7 +65,8 @@ pub struct ReadLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
 /// that write access is needed to the data.
 ///
 /// [`LockCollection`]: `crate::LockCollection`
-pub struct WriteLock<'a, T: ?Sized, R>(&'a RwLock<T, R>);
+#[repr(transparent)]
+pub struct WriteLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
 
 /// RAII structure that unlocks the shared read access to a [`RwLock`]
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(

@@ -6,7 +6,7 @@ use crate::key::Keyable;
 
 use super::{ReadLock, RwLock, RwLockReadGuard, RwLockReadRef};
 
-impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'a, T, R> {
+impl<'l, T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'l, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -28,19 +28,19 @@ impl<'a, T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'a, T, R> {
 	}
 }
 
-impl<'a, T: ?Sized, R> From<&'a RwLock<T, R>> for ReadLock<'a, T, R> {
-	fn from(value: &'a RwLock<T, R>) -> Self {
+impl<'l, T, R> From<&'l RwLock<T, R>> for ReadLock<'l, T, R> {
+	fn from(value: &'l RwLock<T, R>) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<'a, T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'a, T, R> {
+impl<'l, T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'l, T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
 		self.0
 	}
 }
 
-impl<'a, T: ?Sized, R> ReadLock<'a, T, R> {
+impl<'l, T, R> ReadLock<'l, T, R> {
 	/// Creates a new `ReadLock` which accesses the given [`RwLock`]
 	///
 	/// # Examples
@@ -52,12 +52,12 @@ impl<'a, T: ?Sized, R> ReadLock<'a, T, R> {
 	/// let read_lock = ReadLock::new(&lock);
 	/// ```
 	#[must_use]
-	pub const fn new(rwlock: &'a RwLock<T, R>) -> Self {
+	pub const fn new(rwlock: &'l RwLock<T, R>) -> Self {
 		Self(rwlock)
 	}
 }
 
-impl<'a, T: ?Sized, R: RawRwLock> ReadLock<'a, T, R> {
+impl<'l, T: ?Sized, R: RawRwLock> ReadLock<'l, T, R> {
 	/// Locks the underlying [`RwLock`] with shared read access, blocking the
 	/// current thread until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
@@ -65,12 +65,6 @@ impl<'a, T: ?Sized, R: RawRwLock> ReadLock<'a, T, R> {
 		key: Key,
 	) -> RwLockReadGuard<'_, 'key, T, Key, R> {
 		self.0.read(key)
-	}
-
-	/// Creates a shared lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn lock_no_key(&self) -> RwLockReadRef<'_, T, R> {
-		self.0.read_no_key()
 	}
 
 	/// Attempts to acquire the underlying [`RwLock`] with shared read access
@@ -88,7 +82,7 @@ impl<'a, T: ?Sized, R: RawRwLock> ReadLock<'a, T, R> {
 		self.0.try_read_no_key()
 	}
 
-	/// Immediately drops the guard, and consequentlyreleases the shared lock
+	/// Immediately drops the guard, and consequently releases the shared lock
 	/// on the underlying [`RwLock`].
 	pub fn unlock<'key, Key: Keyable + 'key>(guard: RwLockReadGuard<'_, 'key, T, Key, R>) -> Key {
 		RwLock::unlock_read(guard)

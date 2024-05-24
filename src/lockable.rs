@@ -7,46 +7,22 @@ use crate::{
 
 use lock_api::{RawMutex, RawRwLock};
 
-/// A type that may be locked and unlocked, and is known to be the only valid
-/// instance of the lock.
-///
-/// # Safety
-///
-/// There must not be any two values which can unlock the value at the same
-/// time, i.e., this must either be an owned value or a mutable reference.
-pub unsafe trait OwnedLockable<'a>: Lockable<'a> {}
-
-/// A type that may be locked and unlocked
+/// A raw lock type that may be locked and unlocked
 ///
 /// # Safety
 ///
 /// A deadlock must never occur. The `unlock` method must correctly unlock the
 /// data. The `get_ptrs` method must be implemented correctly. The `Output`
 /// must be unlocked when it is dropped.
-pub unsafe trait Lockable<'a> {
-	/// The output of the lock
-	type Output;
 
-	/// Returns a list of all pointers to locks. This is used to ensure that
-	/// the same lock isn't included twice
-	#[must_use]
-	fn get_ptrs(&self) -> Vec<usize>;
-
+// Why not use a RawRwLock? Because that would be semantically incorrect, and I
+// don't want an INIT or GuardMarker associated item.
+// Originally, RawLock had a sister trait: RawSharableLock. I removed it
+// because it'd be difficult to implement a separate type that takes a
+// different kind of RawLock. But now the Sharable marker trait is needed to
+// indicate if reads can be used.
+pub unsafe trait RawLock: Send + Sync {
 	/// Blocks until the lock is acquired
-	///
-	/// # Safety
-	///
-	/// It is undefined behavior to:
-	/// * Use this without ownership or mutable access to the [`ThreadKey`],
-	/// which should last as long as the return value is alive.
-	/// * Call this on multiple locks without unlocking first.
-	///
-	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn lock(&'a self) -> Self::Output;
-
-	/// Attempt to lock without blocking.
-	///
-	/// Returns `Some` if successful, `None` otherwise.
 	///
 	/// # Safety
 	///
@@ -55,649 +31,462 @@ pub unsafe trait Lockable<'a> {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn try_lock(&'a self) -> Option<Self::Output>;
+	unsafe fn lock(&self);
+
+	/// Attempt to lock without blocking.
+	///
+	/// Returns `true` if successful, `false` otherwise.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this without ownership or mutable
+	/// access to the [`ThreadKey`], which should last as long as the return
+	/// value is alive.
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
+	unsafe fn try_lock(&self) -> bool;
+
+	/// Releases the lock
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this if the lock is not acquired
+	unsafe fn unlock(&self);
+
+	/// Blocks until the data the lock protects can be safely read.
+	///
+	/// Some locks, but not all, will allow multiple readers at once. If
+	/// multiple readers are allowed for a [`Lockable`] type, then the
+	/// [`Sharable`] marker trait should be implemented.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this without ownership or mutable
+	/// access to the [`ThreadKey`], which should last as long as the return
+	/// value is alive.
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
+	unsafe fn read(&self);
+
+	// Attempt to read without blocking.
+	///
+	/// Returns `true` if successful, `false` otherwise.
+	///
+	/// Some locks, but not all, will allow multiple readers at once. If
+	/// multiple readers are allowed for a [`Lockable`] type, then the
+	/// [`Sharable`] marker trait should be implemented.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this without ownership or mutable
+	/// access to the [`ThreadKey`], which should last as long as the return
+	/// value is alive.
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
+	unsafe fn try_read(&self) -> bool;
+
+	/// Releases the lock after calling `read`.
+	///
+	/// # Safety
+	///
+	/// It is undefined behavior to use this if the read lock is not acquired
+	unsafe fn unlock_read(&self);
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &T {
-	type Output = T::Output;
+/// A type that may be locked and unlocked.
+///
+/// This trait is usually implemented on collections of [`RawLock`]s. For
+/// example, a `Vec<Mutex<i32>>`.
+///
+/// # Safety
+///
+/// Acquiring the locks returned by `get_ptrs` must allow for the values
+/// returned by `guard` or `read_guard` to be safely used for exclusive or
+/// shared access, respectively.
+///
+/// Dropping the `Guard` and `ReadGuard` types must unlock those same locks.
+///
+/// The order of the resulting list from `get_ptrs` must be deterministic. As
+/// long as the value is not mutated, the references must always be in the same
+/// order.
+pub unsafe trait Lockable {
+	/// The exclusive guard that does not hold a key
+	type Guard<'g>
+	where
+		Self: 'g;
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		(**self).get_ptrs()
+	/// The shared guard type that does not hold a key
+	type ReadGuard<'g>
+	where
+		Self: 'g;
+
+	/// Yields a list of references to the [`RawLock`]s contained within this
+	/// value.
+	///
+	/// These reference locks which must be locked before acquiring a guard,
+	/// and unlocked when the guard is dropped. The order of the resulting list
+	/// is deterministic. As long as the value is not mutated, the references
+	/// will always be in the same order.
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>);
+
+	/// Returns a guard that can be used to access the underlying data mutably.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked
+	/// exclusively before calling this function. The locks must not be
+	/// unlocked until this guard is dropped.
+	#[must_use]
+	unsafe fn guard(&self) -> Self::Guard<'_>;
+
+	/// Returns a guard that can be used to immutably access the underlying
+	/// data.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
+	/// [`RawLock::read`] before calling this function. The locks must not be
+	/// unlocked until this guard is dropped.
+	#[must_use]
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
+}
+
+/// A marker trait to indicate that multiple readers can access the lock at a
+/// time.
+///
+/// # Safety
+///
+/// This type must only be implemented if the lock can be safely shared between
+/// multiple readers.
+pub unsafe trait Sharable: Lockable {}
+
+/// A type that may be locked and unlocked, and is known to be the only valid
+/// instance of the lock.
+///
+/// # Safety
+///
+/// There must not be any two values which can unlock the value at the same
+/// time, i.e., this must either be an owned value or a mutable reference.
+pub unsafe trait OwnedLockable: Lockable {}
+
+unsafe impl<T: Send, R: RawMutex + Send + Sync> RawLock for Mutex<T, R> {
+	unsafe fn lock(&self) {
+		self.raw().lock()
 	}
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		(**self).lock()
+	unsafe fn try_lock(&self) -> bool {
+		self.raw().try_lock()
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		(**self).try_lock()
+	unsafe fn unlock(&self) {
+		self.raw().unlock()
+	}
+
+	// this is the closest thing to a read we can get, but Sharable isn't
+	// implemented for this
+	unsafe fn read(&self) {
+		self.raw().lock()
+	}
+
+	unsafe fn try_read(&self) -> bool {
+		self.raw().try_lock()
+	}
+
+	unsafe fn unlock_read(&self) {
+		self.raw().unlock()
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for &mut T {
-	type Output = T::Output;
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		(**self).get_ptrs()
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> RawLock for RwLock<T, R> {
+	unsafe fn lock(&self) {
+		self.raw().lock_exclusive()
 	}
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		(**self).lock()
+	unsafe fn try_lock(&self) -> bool {
+		self.raw().try_lock_exclusive()
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		(**self).try_lock()
-	}
-}
-
-unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for &mut T {}
-
-unsafe impl<'a, T: 'a, R: RawMutex + 'a> Lockable<'a> for Mutex<T, R> {
-	type Output = MutexRef<'a, T, R>;
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		vec![self as *const Self as usize]
+	unsafe fn unlock(&self) {
+		self.raw().unlock_exclusive()
 	}
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		self.lock_no_key()
+	unsafe fn read(&self) {
+		self.raw().lock_shared()
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.try_lock_no_key()
+	unsafe fn try_read(&self) -> bool {
+		self.raw().try_lock_shared()
+	}
+
+	unsafe fn unlock_read(&self) {
+		self.raw().unlock_shared()
 	}
 }
 
-unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for RwLock<T, R> {
-	type Output = RwLockWriteRef<'a, T, R>;
+unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
+	type Guard<'g> = MutexRef<'g, T, R> where Self: 'g;
+	type ReadGuard<'g> = MutexRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		vec![self as *const Self as usize]
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self);
 	}
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		self.write_no_key()
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		MutexRef::new(self)
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.try_write_no_key()
-	}
-}
-
-unsafe impl<'a, T: 'a, R: RawMutex + 'a> OwnedLockable<'a> for Mutex<T, R> {}
-
-unsafe impl<'a, T: 'a, R: RawRwLock + 'a> OwnedLockable<'a> for RwLock<T, R> {}
-
-unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for ReadLock<'a, T, R> {
-	type Output = RwLockReadRef<'a, T, R>;
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		vec![self.as_ref() as *const RwLock<T, R> as usize]
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		self.lock_no_key()
-	}
-
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.try_lock_no_key()
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		MutexRef::new(self)
 	}
 }
 
-unsafe impl<'a, T: 'a, R: RawRwLock + 'a> Lockable<'a> for WriteLock<'a, T, R> {
-	type Output = RwLockWriteRef<'a, T, R>;
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
+	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		vec![self.as_ref() as *const RwLock<T, R> as usize]
+	type ReadGuard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self);
 	}
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		self.lock_no_key()
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		RwLockWriteRef::new(self)
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.try_lock_no_key()
-	}
-}
-
-unsafe impl<'a, A: Lockable<'a>> Lockable<'a> for (A,) {
-	type Output = (A::Output,);
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(1);
-		ptrs.append(&mut self.0.get_ptrs());
-		ptrs
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		(self.0.lock(),)
-	}
-
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		self.0.try_lock().map(|a| (a,))
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		RwLockReadRef::new(self)
 	}
 }
 
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>> Lockable<'a> for (A, B) {
-	type Output = (A::Output, B::Output);
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {}
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(2);
-		ptrs.append(&mut self.0.get_ptrs());
-		ptrs.append(&mut self.1.get_ptrs());
-		ptrs
+unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
+
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
+
+unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'l, T, R> {
+	type Guard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
+
+	type ReadGuard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self.as_ref());
 	}
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			let lock0 = self.0.lock();
-			let Some(lock1) = self.1.try_lock() else {
-				drop(lock0);
-				std::thread::yield_now();
-				continue;
-			};
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		RwLockReadRef::new(self.as_ref())
+	}
 
-			return (lock0, lock1);
+	unsafe fn read_guard(&self) -> Self::Guard<'_> {
+		RwLockReadRef::new(self.as_ref())
+	}
+}
+
+unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'l, T, R> {
+	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
+
+	type ReadGuard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self.as_ref());
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		RwLockWriteRef::new(self.as_ref())
+	}
+
+	unsafe fn read_guard(&self) -> Self::Guard<'_> {
+		RwLockWriteRef::new(self.as_ref())
+	}
+}
+
+// Technically, the exclusive locks can also be shared, but there's currently
+// no way to express that. I don't think I want to ever express that.
+unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'l, T, R> {}
+
+// Because both ReadLock and WriteLock hold references to RwLocks, they can't
+// implement OwnedLockable
+
+unsafe impl<T: Lockable> Lockable for &T {
+	type Guard<'g> = T::Guard<'g> where Self: 'g;
+
+	type ReadGuard<'g> = T::ReadGuard<'g> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		(*self).get_ptrs(ptrs);
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		(*self).guard()
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		(*self).read_guard()
+	}
+}
+
+unsafe impl<T: Sharable> Sharable for &T {}
+
+unsafe impl<T: Lockable> Lockable for &mut T {
+	type Guard<'g> = T::Guard<'g> where Self: 'g;
+
+	type ReadGuard<'g> = T::ReadGuard<'g> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		(**self).get_ptrs(ptrs)
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		(**self).guard()
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		(**self).read_guard()
+	}
+}
+
+unsafe impl<T: Sharable> Sharable for &mut T {}
+
+unsafe impl<T: OwnedLockable> OwnedLockable for &mut T {}
+
+/// Implements `Lockable`, `Sharable`, and `OwnedLockable` for tuples
+/// ex: `tuple_impls!(A B C, 0 1 2);`
+macro_rules! tuple_impls {
+	($($generic:ident)*, $($value:tt)*) => {
+		unsafe impl<$($generic: Lockable,)*> Lockable for ($($generic,)*) {
+			type Guard<'g> = ($($generic::Guard<'g>,)*) where Self: 'g;
+
+			type ReadGuard<'g> = ($($generic::ReadGuard<'g>,)*) where Self: 'g;
+
+			fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+				self.0.get_ptrs(ptrs);
+			}
+
+			unsafe fn guard(&self) -> Self::Guard<'_> {
+				// It's weird that this works
+				// I don't think any other way of doing it compiles
+				($(self.$value.guard(),)*)
+			}
+
+			unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+				($(self.$value.read_guard(),)*)
+			}
 		}
-	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let Some(lock0) = self.0.try_lock() else {
-			return None;
-		};
-		let Some(lock1) = self.1.try_lock() else {
-			return None;
-		};
+		unsafe impl<$($generic: Sharable,)*> Sharable for ($($generic,)*) {}
 
-		Some((lock0, lock1))
-	}
+		unsafe impl<$($generic: OwnedLockable,)*> OwnedLockable for ($($generic,)*) {}
+	};
 }
 
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>> Lockable<'a> for (A, B, C) {
-	type Output = (A::Output, B::Output, C::Output);
+tuple_impls!(A, 0);
+tuple_impls!(A B, 0 1);
+tuple_impls!(A B C, 0 1 2);
+tuple_impls!(A B C D, 0 1 2 3);
+tuple_impls!(A B C D E, 0 1 2 3 4);
+tuple_impls!(A B C D E F, 0 1 2 3 4 5);
+tuple_impls!(A B C D E F G, 0 1 2 3 4 5 6);
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(3);
-		ptrs.append(&mut self.0.get_ptrs());
-		ptrs.append(&mut self.1.get_ptrs());
-		ptrs.append(&mut self.2.get_ptrs());
-		ptrs
-	}
+unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
+	type Guard<'g> = [T::Guard<'g>; N] where Self: 'g;
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			let lock0 = self.0.lock();
-			let Some(lock1) = self.1.try_lock() else {
-				drop(lock0);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock2) = self.2.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				std::thread::yield_now();
-				continue;
-			};
+	type ReadGuard<'g> = [T::ReadGuard<'g>; N] where Self: 'g;
 
-			return (lock0, lock1, lock2);
-		}
-	}
-
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let Some(lock0) = self.0.try_lock() else {
-			return None;
-		};
-		let Some(lock1) = self.1.try_lock() else {
-			return None;
-		};
-		let Some(lock2) = self.2.try_lock() else {
-			return None;
-		};
-
-		Some((lock0, lock1, lock2))
-	}
-}
-
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'a>> Lockable<'a>
-	for (A, B, C, D)
-{
-	type Output = (A::Output, B::Output, C::Output, D::Output);
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(4);
-		ptrs.append(&mut self.0.get_ptrs());
-		ptrs.append(&mut self.1.get_ptrs());
-		ptrs.append(&mut self.2.get_ptrs());
-		ptrs.append(&mut self.3.get_ptrs());
-		ptrs
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			let lock0 = self.0.lock();
-			let Some(lock1) = self.1.try_lock() else {
-				drop(lock0);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock2) = self.2.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock3) = self.3.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				drop(lock2);
-				std::thread::yield_now();
-				continue;
-			};
-
-			return (lock0, lock1, lock2, lock3);
-		}
-	}
-
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let Some(lock0) = self.0.try_lock() else {
-			return None;
-		};
-		let Some(lock1) = self.1.try_lock() else {
-			return None;
-		};
-		let Some(lock2) = self.2.try_lock() else {
-			return None;
-		};
-		let Some(lock3) = self.3.try_lock() else {
-			return None;
-		};
-
-		Some((lock0, lock1, lock2, lock3))
-	}
-}
-
-unsafe impl<'a, A: Lockable<'a>, B: Lockable<'a>, C: Lockable<'a>, D: Lockable<'a>, E: Lockable<'a>>
-	Lockable<'a> for (A, B, C, D, E)
-{
-	type Output = (A::Output, B::Output, C::Output, D::Output, E::Output);
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(5);
-		ptrs.append(&mut self.0.get_ptrs());
-		ptrs.append(&mut self.1.get_ptrs());
-		ptrs.append(&mut self.2.get_ptrs());
-		ptrs.append(&mut self.3.get_ptrs());
-		ptrs.append(&mut self.4.get_ptrs());
-		ptrs
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			let lock0 = self.0.lock();
-			let Some(lock1) = self.1.try_lock() else {
-				drop(lock0);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock2) = self.2.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock3) = self.3.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				drop(lock2);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock4) = self.4.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				drop(lock2);
-				drop(lock3);
-				std::thread::yield_now();
-				continue;
-			};
-
-			return (lock0, lock1, lock2, lock3, lock4);
-		}
-	}
-
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let Some(lock0) = self.0.try_lock() else {
-			return None;
-		};
-		let Some(lock1) = self.1.try_lock() else {
-			return None;
-		};
-		let Some(lock2) = self.2.try_lock() else {
-			return None;
-		};
-		let Some(lock3) = self.3.try_lock() else {
-			return None;
-		};
-		let Some(lock4) = self.4.try_lock() else {
-			return None;
-		};
-
-		Some((lock0, lock1, lock2, lock3, lock4))
-	}
-}
-
-unsafe impl<
-		'a,
-		A: Lockable<'a>,
-		B: Lockable<'a>,
-		C: Lockable<'a>,
-		D: Lockable<'a>,
-		E: Lockable<'a>,
-		F: Lockable<'a>,
-	> Lockable<'a> for (A, B, C, D, E, F)
-{
-	type Output = (
-		A::Output,
-		B::Output,
-		C::Output,
-		D::Output,
-		E::Output,
-		F::Output,
-	);
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(6);
-		ptrs.append(&mut self.0.get_ptrs());
-		ptrs.append(&mut self.1.get_ptrs());
-		ptrs.append(&mut self.2.get_ptrs());
-		ptrs.append(&mut self.3.get_ptrs());
-		ptrs.append(&mut self.4.get_ptrs());
-		ptrs.append(&mut self.5.get_ptrs());
-		ptrs
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		loop {
-			let lock0 = self.0.lock();
-			let Some(lock1) = self.1.try_lock() else {
-				drop(lock0);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock2) = self.2.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock3) = self.3.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				drop(lock2);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock4) = self.4.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				drop(lock2);
-				drop(lock3);
-				std::thread::yield_now();
-				continue;
-			};
-			let Some(lock5) = self.5.try_lock() else {
-				drop(lock0);
-				drop(lock1);
-				drop(lock2);
-				drop(lock3);
-				drop(lock4);
-				std::thread::yield_now();
-				continue;
-			};
-
-			return (lock0, lock1, lock2, lock3, lock4, lock5);
-		}
-	}
-
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let Some(lock0) = self.0.try_lock() else {
-			return None;
-		};
-		let Some(lock1) = self.1.try_lock() else {
-			return None;
-		};
-		let Some(lock2) = self.2.try_lock() else {
-			return None;
-		};
-		let Some(lock3) = self.3.try_lock() else {
-			return None;
-		};
-		let Some(lock4) = self.4.try_lock() else {
-			return None;
-		};
-		let Some(lock5) = self.5.try_lock() else {
-			return None;
-		};
-
-		Some((lock0, lock1, lock2, lock3, lock4, lock5))
-	}
-}
-
-unsafe impl<'a, A: OwnedLockable<'a>> OwnedLockable<'a> for (A,) {}
-unsafe impl<'a, A: OwnedLockable<'a>, B: OwnedLockable<'a>> OwnedLockable<'a> for (A, B) {}
-unsafe impl<'a, A: OwnedLockable<'a>, B: OwnedLockable<'a>, C: OwnedLockable<'a>> OwnedLockable<'a>
-	for (A, B, C)
-{
-}
-unsafe impl<
-		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D)
-{
-}
-unsafe impl<
-		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-		E: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D, E)
-{
-}
-unsafe impl<
-		'a,
-		A: OwnedLockable<'a>,
-		B: OwnedLockable<'a>,
-		C: OwnedLockable<'a>,
-		D: OwnedLockable<'a>,
-		E: OwnedLockable<'a>,
-		F: OwnedLockable<'a>,
-	> OwnedLockable<'a> for (A, B, C, D, E, F)
-{
-}
-
-unsafe impl<'a, T: Lockable<'a>, const N: usize> Lockable<'a> for [T; N] {
-	type Output = [T::Output; N];
-
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(N);
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
-			ptrs.append(&mut lock.get_ptrs());
-		}
-		ptrs
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		unsafe fn unlock_partial<'a, T: Lockable<'a>, const N: usize>(
-			guards: [MaybeUninit<T::Output>; N],
-			upto: usize,
-		) {
-			for (i, guard) in guards.into_iter().enumerate() {
-				if i == upto {
-					break;
-				}
-				drop(guard.assume_init());
-			}
-		}
-
-		'outer: loop {
-			let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
-			if N == 0 {
-				return outputs.map(|mu| mu.assume_init());
-			}
-
-			outputs[0].write(self[0].lock());
-			for i in 1..N {
-				match self[i].try_lock() {
-					Some(guard) => outputs[i].write(guard),
-					None => {
-						unlock_partial::<T, N>(outputs, i);
-						std::thread::yield_now();
-						continue 'outer;
-					}
-				};
-			}
-
-			return outputs.map(|mu| mu.assume_init());
+			lock.get_ptrs(ptrs);
 		}
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		unsafe fn unlock_partial<'a, T: Lockable<'a>, const N: usize>(
-			guards: [MaybeUninit<T::Output>; N],
-			upto: usize,
-		) {
-			for (i, guard) in guards.into_iter().enumerate() {
-				if i == upto {
-					break;
-				}
-				drop(guard.assume_init());
-			}
+	unsafe fn guard<'g>(&'g self) -> Self::Guard<'g> {
+		// The MaybeInit helper functions for arrays aren't stable yet, so
+		// we'll just have to implement it ourselves
+		let mut guards = MaybeUninit::<[MaybeUninit<T::Guard<'g>>; N]>::uninit().assume_init();
+		for i in 0..N {
+			guards[i].write(self[i].guard());
 		}
 
-		let mut outputs = MaybeUninit::<[MaybeUninit<T::Output>; N]>::uninit().assume_init();
-		for i in 1..N {
-			match self[i].try_lock() {
-				Some(guard) => outputs[i].write(guard),
-				None => {
-					unlock_partial::<T, N>(outputs, i);
-					return None;
-				}
-			};
+		guards.map(|g| g.assume_init())
+	}
+
+	unsafe fn read_guard<'g>(&'g self) -> Self::ReadGuard<'g> {
+		let mut guards = MaybeUninit::<[MaybeUninit<T::ReadGuard<'g>>; N]>::uninit().assume_init();
+		for i in 0..N {
+			guards[i].write(self[i].read_guard());
 		}
 
-		Some(outputs.map(|mu| mu.assume_init()))
+		guards.map(|g| g.assume_init())
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Box<[T]> {
-	type Output = Box<[T::Output]>;
+unsafe impl<T: Lockable> Lockable for Box<[T]> {
+	type Guard<'g> = Box<[T::Guard<'g>]> where Self: 'g;
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(self.len());
-		for lock in &**self {
-			ptrs.append(&mut lock.get_ptrs());
-		}
-		ptrs
-	}
+	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
 
-	unsafe fn lock(&'a self) -> Self::Output {
-		if self.is_empty() {
-			return Box::new([]);
-		}
-
-		'outer: loop {
-			let mut outputs = Vec::with_capacity(self.len());
-
-			outputs.push(self[0].lock());
-			for lock in self.iter().skip(1) {
-				match lock.try_lock() {
-					Some(guard) => {
-						outputs.push(guard);
-					}
-					None => {
-						drop(outputs);
-						std::thread::yield_now();
-						continue 'outer;
-					}
-				};
-			}
-
-			return outputs.into_boxed_slice();
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		for lock in self.iter() {
+			lock.get_ptrs(ptrs);
 		}
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let mut outputs = Vec::with_capacity(self.len());
-		for lock in &**self {
-			match lock.try_lock() {
-				Some(guard) => {
-					outputs.push(guard);
-				}
-				None => return None,
-			};
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		let mut guards = Vec::new();
+		for lock in self.iter() {
+			guards.push(lock.guard());
 		}
 
-		Some(outputs.into_boxed_slice())
+		guards.into_boxed_slice()
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		let mut guards = Vec::new();
+		for lock in self.iter() {
+			guards.push(lock.read_guard());
+		}
+
+		guards.into_boxed_slice()
 	}
 }
 
-unsafe impl<'a, T: Lockable<'a>> Lockable<'a> for Vec<T> {
-	type Output = Vec<T::Output>;
+unsafe impl<T: Lockable> Lockable for Vec<T> {
+	// There's no reason why I'd ever want to extend a list of lock guards
+	type Guard<'g> = Box<[T::Guard<'g>]> where Self: 'g;
 
-	fn get_ptrs(&self) -> Vec<usize> {
-		let mut ptrs = Vec::with_capacity(self.len());
+	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
-			ptrs.append(&mut lock.get_ptrs());
-		}
-		ptrs
-	}
-
-	unsafe fn lock(&'a self) -> Self::Output {
-		if self.is_empty() {
-			return Vec::new();
-		}
-
-		'outer: loop {
-			let mut outputs = Vec::with_capacity(self.len());
-
-			outputs.push(self[0].lock());
-			for lock in self.iter().skip(1) {
-				match lock.try_lock() {
-					Some(guard) => {
-						outputs.push(guard);
-					}
-					None => {
-						drop(outputs);
-						std::thread::yield_now();
-						continue 'outer;
-					}
-				};
-			}
-
-			return outputs;
+			lock.get_ptrs(ptrs);
 		}
 	}
 
-	unsafe fn try_lock(&'a self) -> Option<Self::Output> {
-		let mut outputs = Vec::with_capacity(self.len());
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		let mut guards = Vec::new();
 		for lock in self {
-			match lock.try_lock() {
-				Some(guard) => {
-					outputs.push(guard);
-				}
-				None => return None,
-			};
+			guards.push(lock.guard());
 		}
 
-		Some(outputs)
+		guards.into_boxed_slice()
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		let mut guards = Vec::new();
+		for lock in self {
+			guards.push(lock.read_guard());
+		}
+
+		guards.into_boxed_slice()
 	}
 }
 
-unsafe impl<'a, T: OwnedLockable<'a>, const N: usize> OwnedLockable<'a> for [T; N] {}
-unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Box<[T]> {}
-unsafe impl<'a, T: OwnedLockable<'a>> OwnedLockable<'a> for Vec<T> {}
+// I'd make a generic impl<T: Lockable, I: IntoIterator<Item=T>> Lockable for I
+// but I think that'd require sealing up this trait
+
+unsafe impl<T: Sharable, const N: usize> Sharable for [T; N] {}
+unsafe impl<T: Sharable> Sharable for Box<[T]> {}
+unsafe impl<T: Sharable> Sharable for Vec<T> {}
+
+unsafe impl<T: OwnedLockable, const N: usize> OwnedLockable for [T; N] {}
+unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
+unsafe impl<T: OwnedLockable> OwnedLockable for Vec<T> {}

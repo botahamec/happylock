@@ -5,7 +5,7 @@ use lock_api::RawRwLock;
 
 use crate::key::Keyable;
 
-use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
+use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard};
 
 impl<T, R: RawRwLock> RwLock<T, R> {
 	/// Creates a new instance of an `RwLock<T>` which is unlocked.
@@ -24,11 +24,19 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 			raw: R::INIT,
 		}
 	}
-}
 
-impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
-	fn default() -> Self {
-		Self::new(T::default())
+	/// Returns the underlying raw reader-writer lock object.
+	///
+	/// Note that you will most likely need to import the [`RawRwLock`] trait
+	/// from `lock_api` to be able to call functions on the raw reader-writer
+	/// lock.
+	///
+	/// # Safety
+	///
+	/// This method is unsafe because it allows unlocking a mutex while
+	/// still holding a reference to a lock guard.
+	pub const unsafe fn raw(&self) -> &R {
+		&self.raw
 	}
 }
 
@@ -54,6 +62,12 @@ impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
 	}
 }
 
+impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
+	fn default() -> Self {
+		Self::new(T::default())
+	}
+}
+
 impl<T, R: RawRwLock> From<T> for RwLock<T, R> {
 	fn from(value: T) -> Self {
 		Self::new(value)
@@ -62,7 +76,7 @@ impl<T, R: RawRwLock> From<T> for RwLock<T, R> {
 
 impl<T: ?Sized, R> AsMut<T> for RwLock<T, R> {
 	fn as_mut(&mut self) -> &mut T {
-		self.get_mut()
+		self.data.get_mut()
 	}
 }
 
@@ -82,29 +96,9 @@ impl<T, R> RwLock<T, R> {
 	/// }
 	/// assert_eq!(lock.into_inner(), "modified");
 	/// ```
+	#[must_use]
 	pub fn into_inner(self) -> T {
 		self.data.into_inner()
-	}
-}
-
-impl<T: ?Sized, R> RwLock<T, R> {
-	/// Returns a mutable reference to the underlying data.
-	///
-	/// Since this call borrows the `RwLock` mutably, no actual locking needs
-	/// to take place. The mutable borrow statically guarantees no locks exist.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{RwLock, ThreadKey};
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let mut lock = RwLock::new(0);
-	/// *lock.get_mut() = 10;
-	/// assert_eq!(*lock.read(key), 10);
-	/// ```
-	pub fn get_mut(&mut self) -> &mut T {
-		self.data.get_mut()
 	}
 }
 
@@ -153,15 +147,6 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 			// safety: the lock is locked first
 			RwLockReadGuard::new(self, key)
 		}
-	}
-
-	/// Creates a shared lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn read_no_key(&self) -> RwLockReadRef<'_, T, R> {
-		self.raw.lock_shared();
-
-		// safety: the lock is locked first
-		RwLockReadRef(self, PhantomData)
 	}
 
 	/// Attempts to acquire this `RwLock` with shared read access without
@@ -246,19 +231,10 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		}
 	}
 
-	/// Creates an exclusive lock without a key. Locking this without exclusive
-	/// access to the key is undefined behavior.
-	pub(crate) unsafe fn write_no_key(&self) -> RwLockWriteRef<'_, T, R> {
-		self.raw.lock_exclusive();
-
-		// safety: the lock is locked first
-		RwLockWriteRef(self, PhantomData)
-	}
-
 	/// Attempts to lock this `RwLock` with exclusive write access.
 	///
 	/// This function does not block. If the lock could not be acquired at this
-	/// time, then `None` is returned. Otherwise an RAII guard is returned
+	/// time, then `None` is returned. Otherwise, an RAII guard is returned
 	/// which will release the lock when it is dropped.
 	///
 	/// This function does not provide any guarantees with respect to the
@@ -287,17 +263,6 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 			} else {
 				None
 			}
-		}
-	}
-
-	/// Attempts to create an exclusive lock without a key. Locking this
-	/// without exclusive access to the key is undefined behavior.
-	pub(crate) unsafe fn try_write_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
-		if self.raw.try_lock_exclusive() {
-			// safety: the lock is locked first
-			Some(RwLockWriteRef(self, PhantomData))
-		} else {
-			None
 		}
 	}
 
