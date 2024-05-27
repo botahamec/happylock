@@ -1,8 +1,9 @@
 [package]
 name = "happylock"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Mica White <botahamec@outlook.com>"]
 edition = "2021"
+rust-version = "1.65"
 description = "Free deadlock prevention"
 documentation = "https://docs.rs/happylock"
 readme = "README.md"
