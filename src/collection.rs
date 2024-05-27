@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use crate::{key::Keyable, lockable::RawLock};
 
@@ -85,10 +86,17 @@ pub struct RefLockCollection<'a, L> {
 // This type caches the sorting order of the locks and the fact that it doesn't
 // contain any duplicates.
 pub struct BoxedLockCollection<L> {
-	data: Box<L>,
-	locks: Vec<&'static dyn RawLock>, // As far as you know, it's static.
-	                                  // Believe it or not, saying the lifetime
-	                                  // is static when it's not isn't UB
+	// Box isn't used directly because it requires that the data not be
+	// aliased. To resolve this, we'll have to ensure that only one of the
+	// following is true at any given time:
+	//
+	// 1. We have a mutable reference to the data
+	// 2. We have immutable references to the data and locks
+	//
+	// This is enforced by having #1 be true for a mutable or owned reference
+	// to the value, and #2 is true for an immutable reference.
+	data: NonNull<L>,
+	locks: Vec<NonNull<dyn RawLock>>,
 }
 
 /// Locks a collection of locks using a retrying algorithm.

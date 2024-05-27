@@ -10,7 +10,7 @@ use super::{utils, LockGuard, RefLockCollection};
 pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
-	locks.sort_by_key(|lock| std::ptr::from_ref(*lock));
+	locks.sort_by_key(|lock| *lock as *const dyn RawLock);
 	locks
 }
 

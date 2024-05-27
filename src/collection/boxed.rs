@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
 use crate::Keyable;
@@ -19,15 +20,15 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		self.data.get_ptrs(ptrs)
+		ptrs.extend(self.locks())
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
-		self.data.guard()
+		self.data().guard()
 	}
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		self.data.read_guard()
+		self.data().read_guard()
 	}
 }
 
@@ -43,7 +44,7 @@ where
 	type IntoIter = <L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.data.into_iter()
+		self.into_inner().into_iter()
 	}
 }
 
@@ -55,7 +56,7 @@ where
 	type IntoIter = <&'a L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.data.into_iter()
+		self.data().into_iter()
 	}
 }
 
@@ -67,7 +68,7 @@ where
 	type IntoIter = <&'a mut L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.data.into_iter()
+		self.data_mut().into_iter()
 	}
 }
 
@@ -82,19 +83,29 @@ impl<L: OwnedLockable, I: FromIterator<L> + OwnedLockable> FromIterator<L>
 
 impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for BoxedLockCollection<E> {
 	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
-		self.data.extend(iter)
+		self.data_mut().extend(iter)
+	}
+}
+
+unsafe impl<L: Send> Send for BoxedLockCollection<L> {}
+unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
+
+impl<L> Drop for BoxedLockCollection<L> {
+	fn drop(&mut self) {
+		// safety: this was allocated using a box
+		drop(unsafe { Box::from_raw(self.data.as_mut()) })
 	}
 }
 
 impl<L> AsRef<L> for BoxedLockCollection<L> {
 	fn as_ref(&self) -> &L {
-		&self.data
+		self.data()
 	}
 }
 
 impl<L> AsMut<L> for BoxedLockCollection<L> {
 	fn as_mut(&mut self) -> &mut L {
-		&mut self.data
+		self.data_mut()
 	}
 }
 
@@ -115,6 +126,58 @@ impl<L: OwnedLockable + Default> Default for BoxedLockCollection<L> {
 impl<L: OwnedLockable + Default> From<L> for BoxedLockCollection<L> {
 	fn from(value: L) -> Self {
 		Self::new(value)
+	}
+}
+
+impl<L> BoxedLockCollection<L> {
+	/// Gets the underlying collection, consuming this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let data1 = Mutex::new(42);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let data = (&data1, &data2);
+	/// let lock = LockCollection::try_new(&data).unwrap();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let guard = lock.into_inner().0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
+	pub fn into_inner(self) -> L {
+		// safety: this is owned, so no other references exist
+		unsafe { std::ptr::read(self.data.as_ptr()) }
+	}
+
+	/// Gets an immutable reference to the underlying data
+	fn data(&self) -> &L {
+		// safety: the pointer is valid, and there's an immutable reference to
+		//         this value already
+		unsafe { self.data.as_ref() }
+	}
+
+	/// Gets a mutable reference to the underlying data
+	fn data_mut(&mut self) -> &mut L {
+		// safety: the pointer is valid, and there's a mutable reference to
+		//         this value already
+		//         locks cannot be accessed with a mutable reference
+		unsafe { self.data.as_mut() }
+	}
+
+	/// Gets the locks
+	fn locks(&self) -> &[&dyn RawLock] {
+		// safety: the pointers are valid, and there's an immutable reference
+		//         to this value already
+		unsafe {
+			// I honestly have no idea why this works. Clippy suggested it
+			&*(self.locks.as_slice() as *const [NonNull<dyn RawLock>] as *const [&dyn RawLock])
+			//self.locks.iter().map(|ptr| ptr.as_ref()).collect()
+		}
 	}
 }
 
@@ -187,11 +250,11 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		data.get_ptrs(&mut locks);
 
 		// cast to *const () because fat pointers can't be converted to usize
-		locks.sort_by_key(|lock| std::ptr::from_ref(*lock).cast::<()>() as usize);
+		locks.sort_by_key(|lock| (*lock as *const dyn RawLock).cast::<()>() as usize);
 
-		// safety: the box will be dropped after the lock references, so it's
-		//         safe to just pretend they're static
-		let locks = std::mem::transmute(locks);
+		let locks: Vec<&dyn RawLock> = std::mem::transmute(locks);
+		let locks = locks.into_iter().map(NonNull::from).collect();
+		let data = Box::leak(data).into();
 		Self { data, locks }
 	}
 
@@ -217,34 +280,11 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		// safety: we are checking for duplicates before returning
 		unsafe {
 			let this = Self::new_unchecked(data);
-			if contains_duplicates(&this.locks) {
+			if contains_duplicates(this.locks()) {
 				return None;
 			}
 			Some(this)
 		}
-	}
-
-	/// Gets the underlying collection, consuming this collection.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{Mutex, ThreadKey, LockCollection};
-	///
-	/// let data1 = Mutex::new(42);
-	/// let data2 = Mutex::new("");
-	///
-	/// // data1 and data2 refer to distinct mutexes, so this won't panic
-	/// let data = (&data1, &data2);
-	/// let lock = LockCollection::try_new(&data).unwrap();
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let guard = lock.into_inner().0.lock(key);
-	/// assert_eq!(*guard, 42);
-	/// ```
-	#[must_use]
-	pub fn into_inner(self) -> Box<L> {
-		self.data
 	}
 
 	/// Locks the collection
@@ -270,14 +310,14 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::Guard<'g>, Key> {
-		for lock in &self.locks {
+		for lock in self.locks() {
 			// safety: we have the thread key
 			unsafe { lock.lock() };
 		}
 
 		LockGuard {
 			// safety: we've already acquired the lock
-			guard: unsafe { self.data.guard() },
+			guard: unsafe { self.data().guard() },
 			key,
 			_phantom: PhantomData,
 		}
@@ -312,12 +352,12 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::Guard<'g>, Key>> {
 		let guard = unsafe {
-			if !utils::ordered_try_lock(&self.locks) {
+			if !utils::ordered_try_lock(self.locks()) {
 				return None;
 			}
 
 			// safety: we've acquired the locks
-			self.data.guard()
+			self.data().guard()
 		};
 
 		Some(LockGuard {
@@ -374,14 +414,14 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::ReadGuard<'g>, Key> {
-		for lock in &self.locks {
+		for lock in self.locks() {
 			// safety: we have the thread key
 			unsafe { lock.read() };
 		}
 
 		LockGuard {
 			// safety: we've already acquired the lock
-			guard: unsafe { self.data.read_guard() },
+			guard: unsafe { self.data().read_guard() },
 			key,
 			_phantom: PhantomData,
 		}
@@ -417,12 +457,12 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>> {
 		let guard = unsafe {
-			if !utils::ordered_try_read(&self.locks) {
+			if !utils::ordered_try_read(self.locks()) {
 				return None;
 			}
 
 			// safety: we've acquired the locks
-			self.data.read_guard()
+			self.data().read_guard()
 		};
 
 		Some(LockGuard {
