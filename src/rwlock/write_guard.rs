@@ -7,6 +7,18 @@ use crate::key::Keyable;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef};
 
+impl<'a, T: Debug + ?Sized + 'a, R: RawRwLock> Debug for RwLockWriteRef<'a, T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Debug::fmt(&**self, f)
+	}
+}
+
+impl<'a, T: Display + ?Sized + 'a, R: RawRwLock> Display for RwLockWriteRef<'a, T, R> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Display::fmt(&**self, f)
+	}
+}
+
 impl<'a, T: ?Sized + 'a, R: RawRwLock> Deref for RwLockWriteRef<'a, T, R> {
 	type Target = T;
 
@@ -53,6 +65,22 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> RwLockWriteRef<'a, T, R> {
 	#[must_use]
 	pub(crate) unsafe fn new(mutex: &'a RwLock<T, R>) -> Self {
 		Self(mutex, PhantomData)
+	}
+}
+
+impl<'a, 'key, T: Debug + ?Sized + 'a, Key: Keyable + 'key, R: RawRwLock> Debug
+	for RwLockWriteGuard<'a, 'key, T, Key, R>
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Debug::fmt(&**self, f)
+	}
+}
+
+impl<'a, 'key, T: Display + ?Sized + 'a, Key: Keyable + 'key, R: RawRwLock> Display
+	for RwLockWriteGuard<'a, 'key, T, Key, R>
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Display::fmt(&**self, f)
 	}
 }
 
@@ -106,3 +134,5 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 }
 
 unsafe impl<'a, T: ?Sized + Sync + 'a, R: RawRwLock + Sync + 'a> Sync for RwLockWriteRef<'a, T, R> {}
+
+// TODO implement display and debug here
