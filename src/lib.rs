@@ -99,7 +99,7 @@
 //! use std::thread;
 //! use happylock::{LockCollection, Mutex, ThreadKey};
 //!
-//! const N: usize = 100;
+//! const N: usize = 32;
 //!
 //! static DATA: [Mutex<i32>; 2] = [Mutex::new(0), Mutex::new(1)];
 //!

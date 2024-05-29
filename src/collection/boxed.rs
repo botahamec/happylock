@@ -1,3 +1,5 @@
+use std::alloc::Layout;
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
@@ -36,18 +38,6 @@ unsafe impl<L: Sharable> Sharable for BoxedLockCollection<L> {}
 
 unsafe impl<L: OwnedLockable> OwnedLockable for BoxedLockCollection<L> {}
 
-impl<L> IntoIterator for BoxedLockCollection<L>
-where
-	L: IntoIterator,
-{
-	type Item = <L as IntoIterator>::Item;
-	type IntoIter = <L as IntoIterator>::IntoIter;
-
-	fn into_iter(self) -> Self::IntoIter {
-		self.into_inner().into_iter()
-	}
-}
-
 impl<'a, L> IntoIterator for &'a BoxedLockCollection<L>
 where
 	&'a L: IntoIterator,
@@ -60,18 +50,6 @@ where
 	}
 }
 
-impl<'a, L> IntoIterator for &'a mut BoxedLockCollection<L>
-where
-	&'a mut L: IntoIterator,
-{
-	type Item = <&'a mut L as IntoIterator>::Item;
-	type IntoIter = <&'a mut L as IntoIterator>::IntoIter;
-
-	fn into_iter(self) -> Self::IntoIter {
-		self.data_mut().into_iter()
-	}
-}
-
 impl<L: OwnedLockable, I: FromIterator<L> + OwnedLockable> FromIterator<L>
 	for BoxedLockCollection<I>
 {
@@ -81,31 +59,21 @@ impl<L: OwnedLockable, I: FromIterator<L> + OwnedLockable> FromIterator<L>
 	}
 }
 
-impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for BoxedLockCollection<E> {
-	fn extend<T: IntoIterator<Item = L>>(&mut self, iter: T) {
-		self.data_mut().extend(iter)
-	}
-}
-
 unsafe impl<L: Send> Send for BoxedLockCollection<L> {}
 unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
 
 impl<L> Drop for BoxedLockCollection<L> {
 	fn drop(&mut self) {
+		self.locks.clear();
+
 		// safety: this was allocated using a box
-		drop(unsafe { Box::from_raw(self.data.as_mut()) })
+		unsafe { std::alloc::dealloc(self.data.cast_mut().cast(), Layout::new::<UnsafeCell<L>>()) }
 	}
 }
 
 impl<L> AsRef<L> for BoxedLockCollection<L> {
 	fn as_ref(&self) -> &L {
 		self.data()
-	}
-}
-
-impl<L> AsMut<L> for BoxedLockCollection<L> {
-	fn as_mut(&mut self) -> &mut L {
-		self.data_mut()
 	}
 }
 
@@ -130,54 +98,21 @@ impl<L: OwnedLockable + Default> From<L> for BoxedLockCollection<L> {
 }
 
 impl<L> BoxedLockCollection<L> {
-	/// Gets the underlying collection, consuming this collection.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{Mutex, ThreadKey, LockCollection};
-	///
-	/// let data1 = Mutex::new(42);
-	/// let data2 = Mutex::new("");
-	///
-	/// // data1 and data2 refer to distinct mutexes, so this won't panic
-	/// let data = (&data1, &data2);
-	/// let lock = LockCollection::try_new(&data).unwrap();
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let guard = lock.into_inner().0.lock(key);
-	/// assert_eq!(*guard, 42);
-	/// ```
-	#[must_use]
-	pub fn into_inner(self) -> L {
-		// safety: this is owned, so no other references exist
-		unsafe { std::ptr::read(self.data.as_ptr()) }
-	}
-
 	/// Gets an immutable reference to the underlying data
 	fn data(&self) -> &L {
-		// safety: the pointer is valid, and there's an immutable reference to
-		//         this value already
-		unsafe { self.data.as_ref() }
-	}
-
-	/// Gets a mutable reference to the underlying data
-	fn data_mut(&mut self) -> &mut L {
-		// safety: the pointer is valid, and there's a mutable reference to
-		//         this value already
-		//         locks cannot be accessed with a mutable reference
-		unsafe { self.data.as_mut() }
+		unsafe {
+			self.data
+				.as_ref()
+				.unwrap_unchecked()
+				.get()
+				.as_ref()
+				.unwrap_unchecked()
+		}
 	}
 
 	/// Gets the locks
 	fn locks(&self) -> &[&dyn RawLock] {
-		// safety: the pointers are valid, and there's an immutable reference
-		//         to this value already
-		unsafe {
-			// I honestly have no idea why this works. Clippy suggested it
-			&*(self.locks.as_slice() as *const [NonNull<dyn RawLock>] as *const [&dyn RawLock])
-			//self.locks.iter().map(|ptr| ptr.as_ref()).collect()
-		}
+		&self.locks
 	}
 }
 
@@ -245,16 +180,18 @@ impl<L: Lockable> BoxedLockCollection<L> {
 	/// ```
 	#[must_use]
 	pub unsafe fn new_unchecked(data: L) -> Self {
-		let data = Box::new(data);
+		let data = Box::leak(Box::new(UnsafeCell::new(data)));
+		let data_ref = data.get().cast_const().as_ref().unwrap_unchecked();
+
 		let mut locks = Vec::new();
-		data.get_ptrs(&mut locks);
+		data_ref.get_ptrs(&mut locks);
 
 		// cast to *const () because fat pointers can't be converted to usize
 		locks.sort_by_key(|lock| (*lock as *const dyn RawLock).cast::<()>() as usize);
 
-		let locks: Vec<&dyn RawLock> = std::mem::transmute(locks);
-		let locks = locks.into_iter().map(NonNull::from).collect();
-		let data = Box::leak(data).into();
+		// safety we're just changing the lifetimes
+		let locks: Vec<&'static dyn RawLock> = std::mem::transmute(locks);
+		let data = data as *const UnsafeCell<L>;
 		Self { data, locks }
 	}
 
@@ -518,33 +455,6 @@ where
 	/// ```
 	#[must_use]
 	pub fn iter(&'a self) -> <&'a L as IntoIterator>::IntoIter {
-		self.into_iter()
-	}
-}
-
-impl<'a, L: 'a> BoxedLockCollection<L>
-where
-	&'a mut L: IntoIterator,
-{
-	/// Returns an iterator over mutable references to each value in the
-	/// collection.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{Mutex, ThreadKey, LockCollection};
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let data = [Mutex::new(26), Mutex::new(1)];
-	/// let mut lock = LockCollection::new(data);
-	///
-	/// let mut iter = lock.iter_mut();
-	/// let mutex = iter.next().unwrap();
-	///
-	/// assert_eq!(*mutex.as_mut(), 26);
-	/// ```
-	#[must_use]
-	pub fn iter_mut(&'a mut self) -> <&'a mut L as IntoIterator>::IntoIter {
 		self.into_iter()
 	}
 }

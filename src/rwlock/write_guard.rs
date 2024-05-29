@@ -135,5 +135,3 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 }
 
 unsafe impl<'a, T: ?Sized + Sync + 'a, R: RawRwLock + Sync + 'a> Sync for RwLockWriteRef<'a, T, R> {}
-
-// TODO implement display and debug here
