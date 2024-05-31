@@ -2,7 +2,6 @@ use std::alloc::Layout;
 use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ptr::NonNull;
 
 use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
 use crate::Keyable;
