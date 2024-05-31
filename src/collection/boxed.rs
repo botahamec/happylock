@@ -38,6 +38,18 @@ unsafe impl<L: Sharable> Sharable for BoxedLockCollection<L> {}
 
 unsafe impl<L: OwnedLockable> OwnedLockable for BoxedLockCollection<L> {}
 
+impl<L> IntoIterator for BoxedLockCollection<L>
+where
+	L: IntoIterator,
+{
+	type Item = <L as IntoIterator>::Item;
+	type IntoIter = <L as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.into_inner().into_iter()
+	}
+}
+
 impl<'a, L> IntoIterator for &'a BoxedLockCollection<L>
 where
 	&'a L: IntoIterator,
@@ -98,6 +110,30 @@ impl<L: OwnedLockable + Default> From<L> for BoxedLockCollection<L> {
 }
 
 impl<L> BoxedLockCollection<L> {
+	/// Gets the underlying collection, consuming this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let data1 = Mutex::new(42);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let data = (&data1, &data2);
+	/// let lock = LockCollection::try_new(&data).unwrap();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let guard = lock.into_inner().0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
+	pub fn into_inner(self) -> L {
+		// safety: this is owned, so no other references exist
+		unsafe { self.data.read().into_inner() }
+	}
+
 	/// Gets an immutable reference to the underlying data
 	fn data(&self) -> &L {
 		unsafe {
