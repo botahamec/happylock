@@ -102,7 +102,7 @@ impl<L: OwnedLockable + Default> Default for BoxedLockCollection<L> {
 	}
 }
 
-impl<L: OwnedLockable + Default> From<L> for BoxedLockCollection<L> {
+impl<L: OwnedLockable> From<L> for BoxedLockCollection<L> {
 	fn from(value: L) -> Self {
 		Self::new(value)
 	}

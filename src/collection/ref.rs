@@ -89,7 +89,7 @@ impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 	/// let lock = RefLockCollection::new(&data);
 	/// ```
 	#[must_use]
-	pub fn new(data: &'a L) -> RefLockCollection<L> {
+	pub fn new(data: &'a L) -> Self {
 		RefLockCollection {
 			locks: get_locks(data),
 			data,
