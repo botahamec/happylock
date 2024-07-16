@@ -22,6 +22,140 @@ fn contains_duplicates<L: Lockable>(data: L) -> bool {
 	false
 }
 
+unsafe impl<L: Lockable + Send + Sync> RawLock for RetryingLockCollection<L> {
+	unsafe fn lock(&self) {
+		let mut first_index = 0;
+		let mut locks = Vec::new();
+		self.data.get_ptrs(&mut locks);
+
+		'outer: loop {
+			// safety: we have the thread key
+			locks[first_index].lock();
+			for (i, lock) in locks.iter().enumerate() {
+				if i == first_index {
+					continue;
+				}
+
+				// safety: we have the thread key
+				if !lock.try_lock() {
+					for lock in locks.iter().take(i) {
+						// safety: we already locked all of these
+						lock.unlock();
+					}
+
+					if first_index >= i {
+						// safety: this is already locked and can't be unlocked
+						//         by the previous loop
+						locks[first_index].unlock();
+					}
+
+					first_index = i;
+					continue 'outer;
+				}
+			}
+		}
+	}
+
+	unsafe fn try_lock(&self) -> bool {
+		let mut locks = Vec::new();
+		self.data.get_ptrs(&mut locks);
+
+		if locks.is_empty() {
+			return true;
+		}
+
+		unsafe {
+			for (i, lock) in locks.iter().enumerate() {
+				// safety: we have the thread key
+				if !lock.try_lock() {
+					for lock in locks.iter().take(i) {
+						// safety: we already locked all of these
+						lock.unlock();
+					}
+					return false;
+				}
+			}
+		}
+
+		true
+	}
+
+	unsafe fn unlock(&self) {
+		let mut locks = Vec::new();
+		self.get_ptrs(&mut locks);
+
+		for lock in locks {
+			lock.unlock();
+		}
+	}
+
+	unsafe fn read(&self) {
+		let mut first_index = 0;
+		let mut locks = Vec::new();
+		self.data.get_ptrs(&mut locks);
+
+		'outer: loop {
+			// safety: we have the thread key
+			locks[first_index].read();
+			for (i, lock) in locks.iter().enumerate() {
+				if i == first_index {
+					continue;
+				}
+
+				// safety: we have the thread key
+				if !lock.try_read() {
+					for lock in locks.iter().take(i) {
+						// safety: we already locked all of these
+						lock.unlock_read();
+					}
+
+					if first_index >= i {
+						// safety: this is already locked and can't be unlocked
+						//         by the previous loop
+						locks[first_index].unlock_read();
+					}
+
+					first_index = i;
+					continue 'outer;
+				}
+			}
+		}
+	}
+
+	unsafe fn try_read(&self) -> bool {
+		let mut locks = Vec::new();
+		self.data.get_ptrs(&mut locks);
+
+		if locks.is_empty() {
+			return true;
+		}
+
+		unsafe {
+			for (i, lock) in locks.iter().enumerate() {
+				// safety: we have the thread key
+				if !lock.try_read() {
+					for lock in locks.iter().take(i) {
+						// safety: we already locked all of these
+						lock.unlock_read();
+					}
+					return false;
+				}
+			}
+		}
+
+		true
+	}
+
+	unsafe fn unlock_read(&self) {
+		let mut locks = Vec::new();
+		self.get_ptrs(&mut locks);
+
+		for lock in locks {
+			lock.unlock_read();
+		}
+	}
+}
+
 unsafe impl<L: Lockable> Lockable for RetryingLockCollection<L> {
 	type Guard<'g> = L::Guard<'g> where Self: 'g;
 

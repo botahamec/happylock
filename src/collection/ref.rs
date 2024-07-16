@@ -39,6 +39,40 @@ where
 	}
 }
 
+unsafe impl<'a, L: Lockable + Send + Sync> RawLock for RefLockCollection<'a, L> {
+	unsafe fn lock(&self) {
+		for lock in &self.locks {
+			lock.lock();
+		}
+	}
+
+	unsafe fn try_lock(&self) -> bool {
+		utils::ordered_try_lock(&self.locks)
+	}
+
+	unsafe fn unlock(&self) {
+		for lock in &self.locks {
+			lock.unlock();
+		}
+	}
+
+	unsafe fn read(&self) {
+		for lock in &self.locks {
+			lock.read();
+		}
+	}
+
+	unsafe fn try_read(&self) -> bool {
+		utils::ordered_try_read(&self.locks)
+	}
+
+	unsafe fn unlock_read(&self) {
+		for lock in &self.locks {
+			lock.unlock_read();
+		}
+	}
+}
+
 unsafe impl<'c, L: Lockable> Lockable for RefLockCollection<'c, L> {
 	type Guard<'g> = L::Guard<'g> where Self: 'g;
 

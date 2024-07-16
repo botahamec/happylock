@@ -15,6 +15,40 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
 
+unsafe impl<L: Lockable + Send + Sync> RawLock for BoxedLockCollection<L> {
+	unsafe fn lock(&self) {
+		for lock in self.locks() {
+			lock.lock();
+		}
+	}
+
+	unsafe fn try_lock(&self) -> bool {
+		utils::ordered_try_lock(self.locks())
+	}
+
+	unsafe fn unlock(&self) {
+		for lock in self.locks() {
+			lock.unlock();
+		}
+	}
+
+	unsafe fn read(&self) {
+		for lock in self.locks() {
+			lock.read();
+		}
+	}
+
+	unsafe fn try_read(&self) -> bool {
+		utils::ordered_try_read(self.locks())
+	}
+
+	unsafe fn unlock_read(&self) {
+		for lock in self.locks() {
+			lock.unlock_read();
+		}
+	}
+}
+
 unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 	type Guard<'g> = L::Guard<'g> where Self: 'g;
 

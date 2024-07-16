@@ -11,6 +11,46 @@ fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	locks
 }
 
+unsafe impl<L: Lockable + Send + Sync> RawLock for OwnedLockCollection<L> {
+	unsafe fn lock(&self) {
+		let locks = get_locks(&self.data);
+		for lock in locks {
+			lock.lock();
+		}
+	}
+
+	unsafe fn try_lock(&self) -> bool {
+		let locks = get_locks(&self.data);
+		utils::ordered_try_lock(&locks)
+	}
+
+	unsafe fn unlock(&self) {
+		let locks = get_locks(&self.data);
+		for lock in locks {
+			lock.unlock();
+		}
+	}
+
+	unsafe fn read(&self) {
+		let locks = get_locks(&self.data);
+		for lock in locks {
+			lock.read();
+		}
+	}
+
+	unsafe fn try_read(&self) -> bool {
+		let locks = get_locks(&self.data);
+		utils::ordered_try_read(&locks)
+	}
+
+	unsafe fn unlock_read(&self) {
+		let locks = get_locks(&self.data);
+		for lock in locks {
+			lock.unlock_read();
+		}
+	}
+}
+
 unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
 	type Guard<'g> = L::Guard<'g> where Self: 'g;
 
