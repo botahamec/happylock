@@ -1,6 +1,6 @@
+use std::cell::Cell;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use once_cell::sync::Lazy;
 use thread_local::ThreadLocal;
@@ -20,7 +20,7 @@ mod sealed {
 // I am concerned that having multiple crates linked together with different
 // static variables could break my key system. Library code probably shouldn't
 // be creating keys at all.
-static KEY: Lazy<ThreadLocal<AtomicLock>> = Lazy::new(ThreadLocal::new);
+static KEY: Lazy<ThreadLocal<KeyCell>> = Lazy::new(ThreadLocal::new);
 
 /// The key for the current thread.
 ///
@@ -51,7 +51,9 @@ impl Debug for ThreadKey {
 // If you lose the thread key, you can get it back by calling ThreadKey::get
 impl Drop for ThreadKey {
 	fn drop(&mut self) {
-		unsafe { KEY.get().unwrap().force_unlock() }
+		// safety: a thread key cannot be acquired without creating the lock
+		// safety: the key is lost, so it's safe to unlock the cell
+		unsafe { KEY.get().unwrap_unchecked().force_unlock() }
 	}
 }
 
@@ -72,6 +74,8 @@ impl ThreadKey {
 	#[must_use]
 	pub fn get() -> Option<Self> {
 		// safety: we just acquired the lock
+		// safety: if this code changes, check to ensure the requirement for
+		//         the Drop implementation is still true
 		KEY.get_or_default().try_lock().then_some(Self {
 			phantom: PhantomData,
 		})
@@ -80,20 +84,20 @@ impl ThreadKey {
 
 /// A dumb lock that's just a wrapper for an [`AtomicBool`].
 #[derive(Debug, Default)]
-struct AtomicLock {
-	is_locked: AtomicBool,
+struct KeyCell {
+	is_locked: Cell<bool>,
 }
 
-impl AtomicLock {
-	/// Attempt to lock the `AtomicLock`. This is not a fair lock.
+impl KeyCell {
+	/// Attempt to lock the `KeyCell`. This is not a fair lock.
 	#[must_use]
 	pub fn try_lock(&'static self) -> bool {
-		!self.is_locked.swap(true, Ordering::Acquire)
+		!self.is_locked.replace(true)
 	}
 
-	/// Forcibly unlocks the `AtomicLock`. This should only be called if the
-	/// key to the lock has been "lost".
+	/// Forcibly unlocks the `KeyCell`. This should only be called if the key
+	/// from this `KeyCell` has been "lost".
 	pub unsafe fn force_unlock(&self) {
-		self.is_locked.store(false, Ordering::Release);
+		self.is_locked.set(false);
 	}
 }
