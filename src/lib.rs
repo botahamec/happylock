@@ -169,6 +169,7 @@ mod key;
 pub mod collection;
 pub mod lockable;
 pub mod mutex;
+pub mod poisonable;
 pub mod rwlock;
 
 pub use key::{Keyable, ThreadKey};

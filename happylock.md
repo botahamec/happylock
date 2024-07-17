@@ -264,25 +264,6 @@ Time Complexity: O(nlogn)
 
 ---
 
-## Missing Features
-
-- `Condvar`/`Barrier`
-- We probably don't need `OnceLock` or `LazyLock`
-- Standard Library Backend
-- Mutex poisoning
-- Support for `no_std`
-- Convenience methods: `lock_swap`, `lock_set`?
-- `try_lock_swap` doesn't need a `ThreadKey`
-- Going further: `LockCell` API (preemptive allocation)
-
----
-
-<!--_class: invert lead -->
-
-## What's next?
-
----
-
 ## Problem: Live-locking
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
@@ -310,7 +291,7 @@ Although this library is able to successfully prevent deadlocks, livelocks may s
 # New traits
 
 ```rust
-unsafe trait Lock {
+unsafe trait RawLock {
     unsafe fn lock(&self);
     unsafe fn try_lock(&self) -> bool;
     unsafe fn unlock(&self);
@@ -331,6 +312,310 @@ unsafe trait Lockable {  // this is a bad name (LockGroup?)
   - for best performance: `RefLockCollection`, `BoxedLockCollection`, `OwnedLockCollection`
 - `LockCollection::new_ref` doesn't work without sorting
   - So as a fallback, provide `RetryingLockCollection`. It doesn't do any sorting, but unlikely to ever acquire the lock
+
+---
+
+## Solving self-referential data structures with references
+
+```rust
+struct RefLockCollection<'a, L> {
+    data: &'a L,
+    locks: Vec<&'a dyn RawLock>
+}
+```
+
+But what if I don't want to manage lifetimes?
+
+---
+
+## Solving self-referential data structures with heap allocation
+
+```rust
+struct BoxedLockCollection<L> {
+    data: *const UnsafeCell<L>,
+    locks: Vec<&'static dyn RawLock>
+}
+```
+
+But what if I don't want to do any lock sorting?
+
+---
+
+## Solving self-referential data structures with owned lockables
+
+```rust
+struct OwnedLockCollection<L> {
+    data: L,
+}
+```
+
+This doesn't allow immutable references to data, but also doesn't require any sorting
+
+But what if I don't have ownership of the locks?
+
+---
+
+## Solving self-referential data structures with retrying locks
+
+```rust
+struct RetryingLockCollection<L> {
+    data: L,
+}
+```
+
+This is what we were trying to avoid earlier
+
+---
+
+## Let's make four different lock collection types that do almost the same thing!
+
+- `BoxedLockCollection`: The default. Sorts the locks by memory address, and locks in that order. Heap allocation is required.
+
+- `RefLockCollection`: Same as boxed, but requires the caller to manage the lifetimes.
+
+- `RetryingLockCollection`: Mostly cheap to construct, but will usually fail to lock the data if there is any contention.
+
+- `OwnedLockCollection`: The cheapest option. Locks in the order given. No shared references to inner collection.
+
+---
+
+## RwLocks in collections
+
+This is what I used in HappyLock 0.1:
+
+```rust
+struct ReadLock<'a, T(&'a RwLock<T>);
+struct WriteLock<'a, T(&'a RwLock<T>);
+```
+
+**Problem:** This can't be used inside of an `OwnedLockCollection`
+
+---
+
+## Allowing reads on `OwnedLockCollection`
+
+```rust
+// update RawLock
+unsafe trait RawLock {
+    // * snip *
+    unsafe fn read(&self);
+    unsafe fn try_read(&self);
+    unsafe fn unlock_read(&self);
+}
+
+// update Lockable
+unsafe trait Lockable {
+    // * snip *
+    type ReadGuard<'g> where Self: 'g;
+    unsafe fn read_guard<'g>(&'g self) -> Self::ReadGuard<'g>;
+}
+```
+
+---
+
+## Not every lock can be read doe
+
+```rust
+// This trait is used to indicate that reading is actually useful
+unsafe trait Sharable: Lockable {}
+
+impl<L: Sharable> OwnedLockable<L> {
+    pub fn read<..>(&'g self, key: Key) -> LockGuard<..> { /* ... */ }
+
+    pub fn try_read<..>(&'g self, key: Key) -> Option<LockGuard<..>> { /* ... */ }
+
+    pub fn unlock_read<..>(guard: LockGuard<..>) { /* ... */ }
+}
+
+// the same methods exist on other lock collections too
+```
+
+---
+
+## Missing Features
+
+- `Condvar`/`Barrier`
+- We probably don't need `OnceLock` or `LazyLock`
+- Standard Library Backend
+- Mutex poisoning
+- Support for `no_std`
+- Convenience methods: `lock_swap`, `lock_set`?
+- `try_lock_swap` doesn't need a `ThreadKey`
+- Going further: `LockCell` API (preemptive allocation)
+
+---
+
+<!--_class: invert lead -->
+
+## What's next?
+
+---
+
+## Poisoning
+
+```rust
+unsafe impl<L: Lockable + Send + Sync> RawLock for LockCollection<L>
+
+pub struct Poisonable<L: Lockable + RawLock> {
+    inner: L,
+    poisoned: PoisonFlag,
+}
+
+impl<L: Lockable + RawLock> Lockable for Poisonable<L> {
+    type Guard<'g> = Result<PoisonRef<'g, L::Guard>, PoisonErrorRef<'g, L::Guard>>
+        where Self: 'g;
+
+    // and so on...
+}
+```
+
+Allows: `Poisonable<LockCollection>` and `LockCollection<Poisonable>`
+
+---
+
+## OS Locks
+
+- Using `parking_lot` makes the binary size much larger
+- Unfortunately, it's impossible to implement `RawLock` on the standard library lock primitives
+- Creating a new crate based on a fork of the standard library is hard
+- Solution: create a new library (`sys_locks`), which exposes raw locks from the operating system
+- This is more complicated than you might think
+
+---
+
+## Expanding Cyclic Wait
+
+> ... sometimes you need to lock an object to read its value and determine what should be locked next... is there a way to address it?
+
+```rust
+let guard = m1.lock(key);
+if *guard == true {
+    let key = Mutex::unlock(m);
+    let data = [&m1, &m2];
+    let collection = LockCollection::try_new(data).unwrap();
+    let guard = collection.lock(key);
+
+    // m1 might no longer be true here...
+}
+```
+
+---
+
+## What I Really Want
+
+```txt
+ordered locks: m1, m2, m3
+
+if m1 is true
+    lock m2 and keep m1 locked
+else
+    skip m2 and lock m3
+```
+
+We can specify lock orders using `OwnedLockCollection`
+
+Then we need an iterator over the collection to keep that ordering
+
+This will be hard to do with tuples (but might not be impossible)
+
+---
+
+## Compile-Time Duplicate Checks
+
+As Mikhail keeps reminding me, it might be possible to do the duplicate detection at compile-time using a Bloom filter. This is something I'll have to try at some point.
+
+This would only be useful for `RetryingLockCollection`
+
+---
+
+# Convenience Methods
+
+`Mutex::lock_swap`, `lock_clone`, etc would be cool
+
+\
+\
+\
+These methods would still require a `ThreadKey` though
+
+```rust
+let guard = mutex.lock(key);
+let cloned = mutex.lock_clone(); // deadlock
+```
+
+---
+
+# Try-Convenience Methods
+
+- `Mutex::try_swap`, `try_set` would not require a `ThreadKey`
+- They can't block the current thread (because `try`), and they can't block other threads (because they release the lock immediately)
+- Same probably applies to `try_clone` and `try_take`, but could be a problem if the `Clone` implementation tries to lock something else
+
+---
+
+## `LockCell`
+
+This would only allow methods tyo be called which immediately release the lock
+
+This would never require a `ThreadKey`
+
+Could run into bugs:
+
+```rust
+let a: LockCell<i32>;
+let b: LockCell<i32>;
+if a == b {
+    // a and b are no longer equal
+}
+```
+
+---
+
+## Readonly Lock Collections
+
+- The original idea behind `Sharable` was to avoid duplicate checking on collections that will only ever be read.
+- Reading can't cause a deadlock? Or so I thought.
+
+From the standard library documentation:
+
+```txt
+// Thread 1              |  // Thread 2
+let _rg1 = lock.read();  |
+                         |  // will block
+                         |  let _wg = lock.write();
+// may deadlock          |
+let _rg2 = lock.read();  |
+```
+
+---
+
+## Recursive Trait
+
+Instead of `Sharable`, use a `Recursive` trait:
+
+```rust
+unsafe trait Recursive: Lockable {}
+```
+
+Add a `Readonly` wrapper around collections of recursives:
+
+```rust
+pub struct Readonly<L: Recursive> {
+    inner: L
+}
+```
+
+A `Readonly` collection cannot be exclusively locked.
+
+---
+
+## Others
+
+- No standard library
+  - hard, because of thread local, and allocation being required for lock collections
+- Condvar and Barrier
+  - these have completely different deadlocking rules. someone else should figure this out
+- LazyLock and OnceLock
+  - can these even deadlock?
 
 ---
 
