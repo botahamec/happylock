@@ -12,6 +12,7 @@ use super::{utils, BoxedLockCollection, LockGuard};
 #[must_use]
 fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 	if l.is_empty() {
+		// Return early to prevent panic in the below call to `windows`
 		return false;
 	}
 
