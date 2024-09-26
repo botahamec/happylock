@@ -36,14 +36,18 @@ pub struct Mutex<T: ?Sized, R> {
 	data: UnsafeCell<T>,
 }
 
-/// A reference to a mutex that unlocks it when dropped
+/// A reference to a mutex that unlocks it when dropped.
+///
+/// This is similar to [`MutexGuard`], except it does not hold a [`Keyable`].
 pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
 	&'a Mutex<T, R>,
 	PhantomData<(&'a mut T, R::GuardMarker)>,
 );
 
-/// An RAII implementation of a “scoped lock” of a mutex. When this structure
-/// is dropped (falls out of scope), the lock will be unlocked.
+/// An RAII implementation of a “scoped lock” of a mutex.
+///
+/// When this structure is dropped (falls out of scope), the lock will be
+/// unlocked.
 ///
 /// This is created by calling the [`lock`] and [`try_lock`] methods on [`Mutex`]
 ///

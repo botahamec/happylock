@@ -69,12 +69,18 @@ pub struct ReadLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
 pub struct WriteLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
 
 /// RAII structure that unlocks the shared read access to a [`RwLock`]
+///
+/// This is similar to [`RwLockReadRef`], except it does not hold a
+/// [`Keyable`].
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(
 	&'a RwLock<T, R>,
 	PhantomData<(&'a mut T, R::GuardMarker)>,
 );
 
 /// RAII structure that unlocks the exclusive write access to a [`RwLock`]
+///
+/// This is similar to [`RwLockWriteRef`], except it does not hold a
+/// [`Keyable`].
 pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
 	&'a RwLock<T, R>,
 	PhantomData<(&'a mut T, R::GuardMarker)>,
