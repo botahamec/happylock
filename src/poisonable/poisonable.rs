@@ -26,7 +26,7 @@ unsafe impl<L: Lockable + RawLock> Lockable for Poisonable<L> {
 		if self.is_poisoned() {
 			Ok(ref_guard)
 		} else {
-			Err(PoisonError { guard: ref_guard })
+			Err(PoisonError::new(ref_guard))
 		}
 	}
 
@@ -39,7 +39,7 @@ unsafe impl<L: Lockable + RawLock> Lockable for Poisonable<L> {
 		if self.is_poisoned() {
 			Ok(ref_guard)
 		} else {
-			Err(PoisonError { guard: ref_guard })
+			Err(PoisonError::new(ref_guard))
 		}
 	}
 }
@@ -71,11 +71,11 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 			_phantom: PhantomData,
 		};
 
-		if self.is_poisoned() {
-			Ok(guard)
-		} else {
-			Err(PoisonError { guard })
+		if !self.is_poisoned() {
+			return Err(PoisonError::new(guard));
 		}
+
+		Ok(guard)
 	}
 
 	pub fn lock<'flag, 'key, Key: Keyable + 'key>(
@@ -118,7 +118,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 
 	pub fn into_inner(self) -> PoisonResult<L> {
 		if self.is_poisoned() {
-			Err(PoisonError { guard: self.inner })
+			Err(PoisonError::new(self.inner))
 		} else {
 			Ok(self.inner)
 		}
@@ -126,9 +126,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 
 	pub fn get_mut(&mut self) -> PoisonResult<&mut L> {
 		if self.is_poisoned() {
-			Err(PoisonError {
-				guard: &mut self.inner,
-			})
+			Err(PoisonError::new(&mut self.inner))
 		} else {
 			Ok(&mut self.inner)
 		}

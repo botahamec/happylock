@@ -17,6 +17,28 @@ impl<Guard> fmt::Display for PoisonError<Guard> {
 
 impl<Guard> Error for PoisonError<Guard> {}
 
+impl<Guard> PoisonError<Guard> {
+	#[must_use]
+	pub const fn new(guard: Guard) -> Self {
+		Self { guard }
+	}
+
+	#[must_use]
+	pub fn into_inner(self) -> Guard {
+		self.guard
+	}
+
+	#[must_use]
+	pub const fn get_ref(&self) -> &Guard {
+		&self.guard
+	}
+
+	#[must_use]
+	pub fn get_mut(&mut self) -> &mut Guard {
+		&mut self.guard
+	}
+}
+
 impl<'flag, 'key, G, Key> fmt::Debug for TryLockPoisonableError<'flag, 'key, G, Key> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
