@@ -11,6 +11,10 @@ use super::{utils, BoxedLockCollection, LockGuard};
 /// returns `true` if the sorted list contains a duplicate
 #[must_use]
 fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
+	if l.is_empty() {
+		return false;
+	}
+
 	l.windows(2)
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }

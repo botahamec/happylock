@@ -17,6 +17,11 @@ pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 /// returns `true` if the sorted list contains a duplicate
 #[must_use]
 fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
+	if l.is_empty() {
+		// Return early to prevent panic in the below call to `windows`
+		return false;
+	}
+
 	l.windows(2)
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
