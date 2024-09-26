@@ -22,8 +22,8 @@ pub unsafe fn ordered_try_lock(locks: &[&dyn RawLock]) -> bool {
 	}
 }
 
-/// Locks the locks in the order they are given. This causes deadlock f this is
-/// called by multiple threads with the locks in different orders.
+/// Locks the locks in the order they are given. This causes deadlock if this
+/// is called by multiple threads with the locks in different orders.
 pub unsafe fn ordered_try_read(locks: &[&dyn RawLock]) -> bool {
 	unsafe {
 		for (i, lock) in locks.iter().enumerate() {
