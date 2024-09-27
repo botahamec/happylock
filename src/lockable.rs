@@ -151,6 +151,18 @@ pub unsafe trait Lockable {
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
 }
 
+pub trait LockableIntoInner: Lockable {
+	type Inner;
+
+	fn into_inner(self) -> Self::Inner;
+}
+
+pub trait LockableAsMut: Lockable {
+	type Inner;
+
+	fn as_mut(&mut self) -> &mut Self::Inner;
+}
+
 /// A marker trait to indicate that multiple readers can access the lock at a
 /// time.
 ///
@@ -255,6 +267,38 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		RwLockReadRef::new(self)
+	}
+}
+
+impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
+	type Inner = T;
+
+	fn into_inner(self) -> Self::Inner {
+		self.into_inner()
+	}
+}
+
+impl<T: Send, R: RawMutex + Send + Sync> LockableAsMut for Mutex<T, R> {
+	type Inner = T;
+
+	fn as_mut(&mut self) -> &mut Self::Inner {
+		self.get_mut()
+	}
+}
+
+impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
+	type Inner = T;
+
+	fn into_inner(self) -> Self::Inner {
+		self.into_inner()
+	}
+}
+
+impl<T: Send, R: RawRwLock + Send + Sync> LockableAsMut for RwLock<T, R> {
+	type Inner = T;
+
+	fn as_mut(&mut self) -> &mut Self::Inner {
+		AsMut::as_mut(self)
 	}
 }
 

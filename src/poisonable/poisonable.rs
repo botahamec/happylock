@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
-use crate::lockable::{Lockable, RawLock};
+use crate::lockable::{Lockable, LockableAsMut, LockableIntoInner, RawLock};
 use crate::Keyable;
 
 use super::{
@@ -282,9 +282,9 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// use happylock::{Mutex, Poisonable};
 	///
 	/// let mutex = Poisonable::new(Mutex::new(0));
-	/// assert_eq!(mutex.into_inner().unwrap().into_inner(), 0);
+	/// assert_eq!(mutex.inner_lock().unwrap().into_inner(), 0);
 	/// ```
-	pub fn into_inner(self) -> PoisonResult<L> {
+	pub fn inner_lock(self) -> PoisonResult<L> {
 		if self.is_poisoned() {
 			Err(PoisonError::new(self.inner))
 		} else {
@@ -293,6 +293,58 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	}
 
 	/// Returns a mutable reference to the underlying lock.
+	///
+	/// # Errors
+	///
+	/// If another user of this lock panicked while holding the lock, then
+	/// this call will return an error instead.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, Poisonable, ThreadKey};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let mut mutex = Poisonable::new(Mutex::new(0));
+	/// *mutex.lock_mut().unwrap().as_mut() = 10;
+	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
+	/// ```
+	pub fn lock_mut(&mut self) -> PoisonResult<&mut L> {
+		if self.is_poisoned() {
+			Err(PoisonError::new(&mut self.inner))
+		} else {
+			Ok(&mut self.inner)
+		}
+	}
+}
+
+impl<L: LockableIntoInner + RawLock> Poisonable<L> {
+	/// Consumes this `Poisonable`, returning the underlying data.
+	///
+	/// # Errors
+	///
+	/// If another user of this lock panicked while holding the lock, then this
+	/// call will return an error instead.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, Poisonable};
+	///
+	/// let mutex = Poisonable::new(Mutex::new(0));
+	/// assert_eq!(mutex.into_inner().unwrap(), 0);
+	/// ```
+	pub fn into_inner(self) -> PoisonResult<L::Inner> {
+		if self.is_poisoned() {
+			Err(PoisonError::new(self.inner.into_inner()))
+		} else {
+			Ok(self.inner.into_inner())
+		}
+	}
+}
+
+impl<L: LockableAsMut + RawLock> Poisonable<L> {
+	/// Returns a mutable reference to the underlying data.
 	///
 	/// Since this call borrows the `Poisonable` mutable, no actual locking
 	/// needs to take place - the mutable borrow statically guarantees no locks
@@ -310,14 +362,14 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let mut mutex = Poisonable::new(Mutex::new(0));
-	/// *mutex.get_mut().unwrap().as_mut() = 10;
+	/// *mutex.get_mut().unwrap() = 10;
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
-	pub fn get_mut(&mut self) -> PoisonResult<&mut L> {
+	pub fn get_mut(&mut self) -> PoisonResult<&mut L::Inner> {
 		if self.is_poisoned() {
-			Err(PoisonError::new(&mut self.inner))
+			Err(PoisonError::new(self.inner.as_mut()))
 		} else {
-			Ok(&mut self.inner)
+			Ok(self.inner.as_mut())
 		}
 	}
 }

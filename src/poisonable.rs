@@ -35,7 +35,7 @@ struct PoisonFlag(#[cfg(panic = "unwind")] AtomicBool);
 /// [`into_inner`]: `PoisonError::into_inner`
 /// [`clear_poison`]: `Poisonable::clear_poison`
 #[derive(Debug, Default)]
-pub struct Poisonable<L: Lockable + RawLock> {
+pub struct Poisonable<L> {
 	inner: L,
 	poisoned: PoisonFlag,
 }
