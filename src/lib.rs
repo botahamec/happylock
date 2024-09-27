@@ -187,6 +187,9 @@ pub use mutex::SpinLock;
 /// [`BoxedLockCollection`]: collection::BoxedLockCollection
 pub type LockCollection<L> = collection::BoxedLockCollection<L>;
 
+/// A re-export for [`poisonable::Poisonable`]
+pub type Poisonable<L> = poisonable::Poisonable<L>;
+
 /// A mutual exclusion primitive useful for protecting shared data, which cannot deadlock.
 ///
 /// By default, this uses `parking_lot` as a backend.

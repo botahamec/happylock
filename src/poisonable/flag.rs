@@ -14,7 +14,7 @@ impl PoisonFlag {
 	}
 
 	pub fn clear_poison(&self) {
-		self.0.store(true, Relaxed)
+		self.0.store(false, Relaxed)
 	}
 }
 

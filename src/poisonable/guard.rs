@@ -1,10 +1,23 @@
 use std::fmt::{Debug, Display};
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering::Relaxed;
 
 use crate::Keyable;
 
-use super::{PoisonGuard, PoisonRef};
+use super::{PoisonFlag, PoisonGuard, PoisonRef};
+
+impl<'a, Guard> PoisonRef<'a, Guard> {
+	// This is used so that we don't keep accidentally adding the flag reference
+	pub(super) const fn new(flag: &'a PoisonFlag, guard: Guard) -> Self {
+		Self {
+			guard,
+			#[cfg(panic = "unwind")]
+			flag,
+			_phantom: PhantomData,
+		}
+	}
+}
 
 impl<'flag, Guard> Drop for PoisonRef<'flag, Guard> {
 	fn drop(&mut self) {

@@ -18,21 +18,117 @@ impl<Guard> fmt::Display for PoisonError<Guard> {
 impl<Guard> Error for PoisonError<Guard> {}
 
 impl<Guard> PoisonError<Guard> {
+	/// Creates a `PoisonError`
+	///
+	/// This is generally created by methods like [`Poisonable::lock`].
+	///
+	/// ```
+	/// use happylock::poisonable::PoisonError;
+	///
+	/// let error = PoisonError::new("oh no");
+	/// ```
+	///
+	/// [`Poisonable::lock`]: `crate::poisonable::Poisonable::lock`
 	#[must_use]
 	pub const fn new(guard: Guard) -> Self {
 		Self { guard }
 	}
 
+	/// Consumes the error indicating that a lock is poisonmed, returning the
+	/// underlying guard to allow access regardless.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use std::collections::HashSet;
+	/// use std::sync::Arc;
+	/// use std::thread;
+	///
+	/// use happylock::{Mutex, Poisonable, ThreadKey};
+	///
+	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
+	///
+	/// // poison the mutex
+	/// let c_mutex = Arc::clone(&mutex);
+	/// let _ = thread::spawn(move || {
+	///     let key = ThreadKey::get().unwrap();
+	///     let mut data = c_mutex.lock(key).unwrap();
+	///     data.insert(10);
+	///     panic!();
+	/// }).join();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let p_err = mutex.lock(key).unwrap_err();
+	/// let data = p_err.into_inner();
+	/// println!("recovered {} items", data.len());
+	/// ```
 	#[must_use]
 	pub fn into_inner(self) -> Guard {
 		self.guard
 	}
 
+	/// Reaches into this error indicating that a lock is poisoned, returning a
+	/// reference to the underlying guard to allow access regardless.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use std::collections::HashSet;
+	/// use std::sync::Arc;
+	/// use std::thread;
+	///
+	/// use happylock::{Mutex, Poisonable, ThreadKey};
+	///
+	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
+	///
+	/// // poison the mutex
+	/// let c_mutex = Arc::clone(&mutex);
+	/// let _ = thread::spawn(move || {
+	///     let key = ThreadKey::get().unwrap();
+	///     let mut data = c_mutex.lock(key).unwrap();
+	///     data.insert(10);
+	///     panic!();
+	/// }).join();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let p_err = mutex.lock(key).unwrap_err();
+	/// let data = p_err.get_ref();
+	/// println!("recovered {} items", data.len());
+	/// ```
 	#[must_use]
 	pub const fn get_ref(&self) -> &Guard {
 		&self.guard
 	}
 
+	/// Reaches into this error indicating that a lock is poisoned, returning a
+	/// mutable reference to the underlying guard to allow access regardless.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use std::collections::HashSet;
+	/// use std::sync::Arc;
+	/// use std::thread;
+	///
+	/// use happylock::{Mutex, Poisonable, ThreadKey};
+	///
+	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
+	///
+	/// // poison the mutex
+	/// let c_mutex = Arc::clone(&mutex);
+	/// let _ = thread::spawn(move || {
+	///     let key = ThreadKey::get().unwrap();
+	///     let mut data = c_mutex.lock(key).unwrap();
+	///     data.insert(10);
+	///     panic!();
+	/// }).join();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let mut p_err = mutex.lock(key).unwrap_err();
+	/// let data = p_err.get_mut();
+	/// data.insert(20);
+	/// println!("recovered {} items", data.len());
+	/// ```
 	#[must_use]
 	pub fn get_mut(&mut self) -> &mut Guard {
 		&mut self.guard
