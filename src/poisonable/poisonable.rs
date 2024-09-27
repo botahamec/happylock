@@ -160,6 +160,9 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(**mutex.lock(key).unwrap(), 10);
 	/// ```
+	///
+	/// [`Poisoned`]: `TryLockPoisonableError::Poisoned`
+	/// [`WouldBlock`]: `TryLockPoisonableError::WouldBlock`
 	pub fn try_lock<'flag, 'key, Key: Keyable + 'key>(
 		&'flag self,
 		key: Key,
