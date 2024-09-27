@@ -103,11 +103,11 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// thread::spawn(move || {
 	///     let key = ThreadKey::get().unwrap();
-	///     **c_mutex.lock(key).unwrap() = 10;
+	///     *c_mutex.lock(key).unwrap() = 10;
 	/// }).join().expect("thread::spawn failed");
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// assert_eq!(**mutex.lock(key).unwrap(), 10);
+	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
 	pub fn lock<'flag, 'key, Key: Keyable + 'key>(
 		&'flag self,
@@ -150,15 +150,15 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// thread::spawn(move || {
 	///     let key = ThreadKey::get().unwrap();
 	///     let mut lock = c_mutex.try_lock(key);
-	///     if let Ok(ref mut mutex) = lock {
-	///         ***mutex = 10;
+	///     if let Ok(mut mutex) = lock {
+	///         *mutex = 10;
 	///     } else {
 	///         println!("try_lock failed");
 	///     }
 	/// }).join().expect("thread::spawn failed");
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// assert_eq!(**mutex.lock(key).unwrap(), 10);
+	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
 	///
 	/// [`Poisoned`]: `TryLockPoisonableError::Poisoned`
@@ -187,7 +187,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// let mutex = Poisonable::new(Mutex::new(0));
 	///
 	/// let mut guard = mutex.lock(key).unwrap();
-	/// **guard += 20;
+	/// *guard += 20;
 	///
 	/// let key = Poisonable::<Mutex<_>>::unlock(guard);
 	/// ```
@@ -257,13 +257,13 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let x = mutex.lock(key).unwrap_or_else(|mut e| {
-	///     ***e.get_mut() = 1;
+	///     *e.get_mut() = 1;
 	///     mutex.clear_poison();
 	///     e.into_inner()
 	/// });
 	///
 	/// assert_eq!(mutex.is_poisoned(), false);
-	/// assert_eq!(**x, 1);
+	/// assert_eq!(*x, 1);
 	/// ```
 	pub fn clear_poison(&self) {
 		self.poisoned.clear_poison()
@@ -311,7 +311,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// let key = ThreadKey::get().unwrap();
 	/// let mut mutex = Poisonable::new(Mutex::new(0));
 	/// *mutex.get_mut().unwrap().as_mut() = 10;
-	/// assert_eq!(**mutex.lock(key).unwrap(), 10);
+	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
 	pub fn get_mut(&mut self) -> PoisonResult<&mut L> {
 		if self.is_poisoned() {

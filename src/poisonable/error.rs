@@ -1,5 +1,6 @@
 use core::fmt;
 use std::error::Error;
+use std::ops::{Deref, DerefMut};
 
 use super::{PoisonError, PoisonGuard, TryLockPoisonableError};
 
@@ -66,7 +67,9 @@ impl<Guard> PoisonError<Guard> {
 	pub fn into_inner(self) -> Guard {
 		self.guard
 	}
+}
 
+impl<T, Guard: Deref<Target = T>> PoisonError<Guard> {
 	/// Reaches into this error indicating that a lock is poisoned, returning a
 	/// reference to the underlying guard to allow access regardless.
 	///
@@ -96,10 +99,12 @@ impl<Guard> PoisonError<Guard> {
 	/// println!("recovered {} items", data.len());
 	/// ```
 	#[must_use]
-	pub const fn get_ref(&self) -> &Guard {
+	pub fn get_ref(&self) -> &T {
 		&self.guard
 	}
+}
 
+impl<T, Guard: DerefMut<Target = T>> PoisonError<Guard> {
 	/// Reaches into this error indicating that a lock is poisoned, returning a
 	/// mutable reference to the underlying guard to allow access regardless.
 	///
@@ -130,7 +135,7 @@ impl<Guard> PoisonError<Guard> {
 	/// println!("recovered {} items", data.len());
 	/// ```
 	#[must_use]
-	pub fn get_mut(&mut self) -> &mut Guard {
+	pub fn get_mut(&mut self) -> &mut T {
 		&mut self.guard
 	}
 }

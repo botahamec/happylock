@@ -68,27 +68,33 @@ impl<'flag, Guard> AsMut<Guard> for PoisonRef<'flag, Guard> {
 
 impl<'flag, 'key, Guard: Debug, Key: Keyable> Debug for PoisonGuard<'flag, 'key, Guard, Key> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		Debug::fmt(&**self, f)
+		Debug::fmt(&self.guard, f)
 	}
 }
 
 impl<'flag, 'key, Guard: Display, Key: Keyable> Display for PoisonGuard<'flag, 'key, Guard, Key> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		Display::fmt(&**self, f)
+		Display::fmt(&self.guard, f)
 	}
 }
 
-impl<'flag, 'key, Guard, Key: Keyable> Deref for PoisonGuard<'flag, 'key, Guard, Key> {
-	type Target = Guard;
+impl<'flag, 'key, T, Guard: Deref<Target = T>, Key: Keyable> Deref
+	for PoisonGuard<'flag, 'key, Guard, Key>
+{
+	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
-		&self.guard.guard
+		#[allow(clippy::explicit_auto_deref)] // fixing this results in a compiler error
+		&*self.guard.guard
 	}
 }
 
-impl<'flag, 'key, Guard, Key: Keyable> DerefMut for PoisonGuard<'flag, 'key, Guard, Key> {
+impl<'flag, 'key, T, Guard: DerefMut<Target = T>, Key: Keyable> DerefMut
+	for PoisonGuard<'flag, 'key, Guard, Key>
+{
 	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.guard.guard
+		#[allow(clippy::explicit_auto_deref)] // fixing this results in a compiler error
+		&mut *self.guard.guard
 	}
 }
 
