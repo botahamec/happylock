@@ -284,7 +284,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// let mutex = Poisonable::new(Mutex::new(0));
 	/// assert_eq!(mutex.inner_lock().unwrap().into_inner(), 0);
 	/// ```
-	pub fn inner_lock(self) -> PoisonResult<L> {
+	pub fn into_inner_lock(self) -> PoisonResult<L> {
 		if self.is_poisoned() {
 			Err(PoisonError::new(self.inner))
 		} else {
@@ -309,7 +309,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// *mutex.lock_mut().unwrap().as_mut() = 10;
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
-	pub fn lock_mut(&mut self) -> PoisonResult<&mut L> {
+	pub fn inner_lock_mut(&mut self) -> PoisonResult<&mut L> {
 		if self.is_poisoned() {
 			Err(PoisonError::new(&mut self.inner))
 		} else {
