@@ -151,15 +151,39 @@ pub unsafe trait Lockable {
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
 }
 
+/// A trait which indicates that `into_inner` is a valid operation for a
+/// [`Lockable`].
+///
+/// This is used for types like [`Poisonable`] to access the inner value of a
+/// lock. [`Poisonable::into_inner`] calls [`LockableIntoInner::into_inner`] to
+/// return a mutable reference of the inner value. This isn't implemented for
+/// some `Lockable`s, such as `&[T]`.
+///
+/// [`Poisonable`]: `crate::Poisonable`
+/// [`Poisonable::into_inner`]: `crate::poisonable::Poisonable::into_inner`
 pub trait LockableIntoInner: Lockable {
+	/// The inner type that is behind the lock
 	type Inner;
 
+	/// Consumes the lock, returning the underlying the lock.
 	fn into_inner(self) -> Self::Inner;
 }
 
+/// A trait which indicates that `as_mut` is a valid operation for a
+/// [`Lockable`].
+///
+/// This is used for types like [`Poisonable`] to access the inner value of a
+/// lock. [`Poisonable::get_mut`] calls [`LockableAsMut::as_mut`] to return a
+/// mutable reference of the inner value. This isn't implemented for some
+/// `Lockable`s, such as `&[T]`.
+///
+/// [`Poisonable`]: `crate::Poisonable`
+/// [`Poisonable::get_mut`]: `crate::poisonable::Poisonable::get_mut`
 pub trait LockableAsMut: Lockable {
+	/// The inner type that is behind the lock
 	type Inner;
 
+	/// Returns a mutable reference to the underlying data.
 	fn as_mut(&mut self) -> &mut Self::Inner;
 }
 
