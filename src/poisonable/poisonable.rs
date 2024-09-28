@@ -365,7 +365,7 @@ impl<L: LockableAsMut + RawLock> Poisonable<L> {
 	/// *mutex.get_mut().unwrap() = 10;
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
-	pub fn get_mut(&mut self) -> PoisonResult<&mut L::Inner> {
+	pub fn get_mut(&mut self) -> PoisonResult<L::Inner<'_>> {
 		if self.is_poisoned() {
 			Err(PoisonError::new(self.inner.as_mut()))
 		} else {

@@ -1,4 +1,6 @@
-use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::lockable::{
+	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
+};
 use crate::Keyable;
 
 use std::collections::HashSet;
@@ -171,6 +173,24 @@ unsafe impl<L: Lockable> Lockable for RetryingLockCollection<L> {
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		self.data.read_guard()
+	}
+}
+
+impl<L: LockableAsMut> LockableAsMut for RetryingLockCollection<L> {
+	type Inner<'a> = L::Inner<'a>
+	where
+		Self: 'a;
+
+	fn as_mut(&mut self) -> Self::Inner<'_> {
+		self.data.as_mut()
+	}
+}
+
+impl<L: LockableIntoInner> LockableIntoInner for RetryingLockCollection<L> {
+	type Inner = L::Inner;
+
+	fn into_inner(self) -> Self::Inner {
+		self.data.into_inner()
 	}
 }
 

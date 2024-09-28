@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::lockable::{Lockable, LockableIntoInner, OwnedLockable, RawLock, Sharable};
 use crate::Keyable;
 
 use super::{utils, LockGuard, OwnedLockCollection};
@@ -66,6 +66,14 @@ unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		self.data.read_guard()
+	}
+}
+
+impl<L: LockableIntoInner> LockableIntoInner for OwnedLockCollection<L> {
+	type Inner = L::Inner;
+
+	fn into_inner(self) -> Self::Inner {
+		self.data.into_inner()
 	}
 }
 
