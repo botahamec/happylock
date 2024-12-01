@@ -5,7 +5,7 @@ use lock_api::RawRwLock;
 
 use crate::key::Keyable;
 
-use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard};
+use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
 
 impl<T, R: RawRwLock> RwLock<T, R> {
 	/// Creates a new instance of an `RwLock<T>` which is unlocked.
@@ -194,6 +194,17 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		}
 	}
 
+	/// Attempts to create an exclusive lock without a key. Locking this
+	/// without exclusive access to the key is undefined behavior.
+	pub(crate) unsafe fn try_write_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
+		if self.raw.try_lock_exclusive() {
+			// safety: the lock is locked first
+			Some(RwLockWriteRef(self, PhantomData))
+		} else {
+			None
+		}
+	}
+
 	/// Locks this `RwLock` with exclusive write access, blocking the current
 	/// until it can be acquired.
 	///
@@ -264,6 +275,11 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 				None
 			}
 		}
+	}
+
+	/// Returns `true` if the rwlock is currently locked in any way
+	pub(crate) fn is_locked(&self) -> bool {
+		self.raw.is_locked()
 	}
 
 	/// Unlocks shared access on the `RwLock`. This is undefined behavior is

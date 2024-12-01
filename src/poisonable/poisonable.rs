@@ -282,7 +282,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// use happylock::{Mutex, Poisonable};
 	///
 	/// let mutex = Poisonable::new(Mutex::new(0));
-	/// assert_eq!(mutex.inner_lock().unwrap().into_inner(), 0);
+	/// assert_eq!(mutex.into_inner_lock().unwrap().into_inner(), 0);
 	/// ```
 	pub fn into_inner_lock(self) -> PoisonResult<L> {
 		if self.is_poisoned() {
@@ -306,7 +306,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let mut mutex = Poisonable::new(Mutex::new(0));
-	/// *mutex.lock_mut().unwrap().as_mut() = 10;
+	/// *mutex.inner_lock_mut().unwrap().as_mut() = 10;
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
 	pub fn inner_lock_mut(&mut self) -> PoisonResult<&mut L> {

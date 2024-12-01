@@ -436,3 +436,37 @@ where
 		self.into_iter()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::{Mutex, ThreadKey};
+
+	#[test]
+	fn non_duplicates_allowed() {
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(1);
+		assert!(RefLockCollection::try_new(&[&mutex1, &mutex2]).is_some())
+	}
+
+	#[test]
+	fn duplicates_not_allowed() {
+		let mutex1 = Mutex::new(0);
+		assert!(RefLockCollection::try_new(&[&mutex1, &mutex1]).is_none())
+	}
+
+	#[test]
+	fn works_in_collection() {
+		let key = ThreadKey::get().unwrap();
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(1);
+		let collection0 = [&mutex1, &mutex2];
+		let collection1 = RefLockCollection::try_new(&collection0).unwrap();
+		let collection = RefLockCollection::try_new(&collection1).unwrap();
+
+		let guard = collection.lock(key);
+		assert!(mutex1.is_locked());
+		assert!(mutex2.is_locked());
+		drop(guard);
+	}
+}

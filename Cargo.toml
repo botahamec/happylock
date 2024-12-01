@@ -19,5 +19,7 @@ lock_api = "0.4"
 parking_lot = { version = "0.12", optional = true }
 spin = { version = "0.9", optional = true }
 
+mutants = "0.0.3"  # used to skip functions that can't run
+
 [features]
 default = ["parking_lot"]

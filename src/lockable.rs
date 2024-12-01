@@ -622,3 +622,99 @@ unsafe impl<T: Sharable> Sharable for Vec<T> {}
 unsafe impl<T: OwnedLockable, const N: usize> OwnedLockable for [T; N] {}
 unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
 unsafe impl<T: OwnedLockable> OwnedLockable for Vec<T> {}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::Mutex;
+
+	#[test]
+	fn array_get_ptrs_empty() {
+		let locks: [Mutex<()>; 0] = [];
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert!(lock_ptrs.is_empty());
+	}
+
+	#[test]
+	fn array_get_ptrs_length_one() {
+		let locks: [Mutex<i32>; 1] = [Mutex::new(1)];
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
+	}
+
+	#[test]
+	fn array_get_ptrs_length_two() {
+		let locks: [Mutex<i32>; 2] = [Mutex::new(1), Mutex::new(2)];
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 2);
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[1], locks[1].raw())) }
+	}
+
+	#[test]
+	fn vec_get_ptrs_empty() {
+		let locks: Vec<Mutex<()>> = Vec::new();
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert!(lock_ptrs.is_empty());
+	}
+
+	#[test]
+	fn vec_get_ptrs_length_one() {
+		let locks: Vec<Mutex<i32>> = vec![Mutex::new(1)];
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
+	}
+
+	#[test]
+	fn vec_get_ptrs_length_two() {
+		let locks: Vec<Mutex<i32>> = vec![Mutex::new(1), Mutex::new(2)];
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 2);
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[1], locks[1].raw())) }
+	}
+
+	#[test]
+	fn box_get_ptrs_empty() {
+		let locks: Box<[Mutex<()>]> = Box::from([]);
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert!(lock_ptrs.is_empty());
+	}
+
+	#[test]
+	fn box_get_ptrs_length_one() {
+		let locks: Box<[Mutex<i32>]> = vec![Mutex::new(1)].into_boxed_slice();
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
+	}
+
+	#[test]
+	fn box_get_ptrs_length_two() {
+		let locks: Box<[Mutex<i32>]> = vec![Mutex::new(1), Mutex::new(2)].into_boxed_slice();
+		let mut lock_ptrs = Vec::new();
+		locks.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 2);
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
+		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[1], locks[1].raw())) }
+	}
+}

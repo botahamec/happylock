@@ -11,6 +11,7 @@ impl<Guard> fmt::Debug for PoisonError<Guard> {
 }
 
 impl<Guard> fmt::Display for PoisonError<Guard> {
+	#[cfg_attr(test, mutants::skip)]
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		"poisoned lock: another task failed inside".fmt(f)
 	}
@@ -150,6 +151,7 @@ impl<'flag, 'key, G, Key> fmt::Debug for TryLockPoisonableError<'flag, 'key, G, 
 }
 
 impl<'flag, 'key, G, Key> fmt::Display for TryLockPoisonableError<'flag, 'key, G, Key> {
+	#[cfg_attr(test, mutants::skip)]
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
 			Self::Poisoned(..) => "poisoned lock: another task failed inside",

@@ -393,3 +393,20 @@ impl<L: Sharable> OwnedLockCollection<L> {
 		guard.key
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::Mutex;
+
+	#[test]
+	fn can_be_extended() {
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(1);
+		let mut collection = OwnedLockCollection::new(vec![mutex1, mutex2]);
+
+		collection.extend([Mutex::new(2)]);
+
+		assert_eq!(collection.data.len(), 3);
+	}
+}

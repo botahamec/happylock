@@ -123,22 +123,18 @@ println!("{}", data[1]);
 
 ## Future Work
 
-It might to possible to break the `ThreadKey` system by having two crates import this crate and call `ThreadKey::get`. I'm not quite sure how this works, but Rust could decide to give each crate their own key, ergo one thread would get two keys. I don't think the standard library would have this issue. At a certain point, I have to recognize that someone could also just import the standard library mutex and get a deadlock that way.
-
 Are the ergonomics here any good? This is completely uncharted territory. Maybe there are some useful helper methods we don't have here yet. Maybe `try_lock` should return a `Result`. Maybe `lock_api` or `spin` implements some useful methods that I kept out for this proof of concept. Maybe there are some lock-specific methods that could be added to `LockCollection`. More types might be lockable using a lock collection.
 
 It'd be nice to be able to use the mutexes built into the operating system, saving on binary size. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible. Maybe I could implement my own abstraction over the OS mutexes. I could also simply implement `Lockable` for the standard library mutex.
 
-Personally, I don't like mutex poisoning, but maybe it can be worked into the library if you're into that sort of thing.
+I've been thinking about adding `Condvar` and `Barrier`, but I've been stopped by two things. I don't use either of those very often, so I'm probably not the right person to try to implement either of them. They're also weird, and harder to prevent deadlocking for. They're sort of the opposite of a mutex, since a mutex guarantees that at least one thread can always access each resource.
+
+Is upgrading an `RwLock` even possible here? I don't know, but I'll probably look into it at some point. Downgrading is definitely possible in at least some cases.
 
 It'd be interesting to add some methods such as `lock_clone` or `lock_swap`. This would still require a thread key, in case the mutex is already locked. The only way this could be done without a thread key is with a `&mut Mutex<T>`, but we already have `as_mut`. A `try_lock_clone` or `try_lock_swap` might not need a `ThreadKey` though. A special lock that looks like `Cell` but implements `Sync` could be shared without a thread key, because the lock would be dropped immediately (preventing non-preemptive allocation). It might make some common operations easier.
 
-Now that we have the `Sharable` trait, indicating that all of the locks in a collection can be shared, we could implement a `Readonly` wrapper around the collections that don't allow access to `lock` and `try_lock`. The idea would be that if you're not exclusively locking the collection, then you don't need to check for duplicates in the collection. Calling `.read()` on the same `RwLock` twice dooes not cause a deadlock.
+We could implement a `Readonly` wrapper around the collections that don't allow access to `lock` and `try_lock`. The idea would be that if you're not exclusively locking the collection, then you don't need to check for duplicates in the collection. Calling `.read()` on twice on a recursive `RwLock` twice dooes not cause a deadlock. This would also require a `Recursive` trait.
 
 I want to try to get this working without the standard library. There are a few problems with this though. For instance, this crate uses `thread_local` to allow other threads to have their own keys. Also, the only practical type of mutex that would work is a spinlock. Although, more could be implemented using the `RawMutex` trait. The `Lockable` trait requires memory allocation at this time in order to check for duplicate locks.
-
-I've been thinking about addiung `Condvar` and `Barrier`, but I've been stopped by two things. I don't use either of those very often, so I'm probably not the right person to try to implement either of them. They're also weird, and harder to prevent deadlocking for. They're sort of the opposite of a mutex, since a mutex guarantees that at least one thread can always access each resource.
-
-Do `OnceLock` or `LazyLock` ever deadlock? We might not need to add those here.
 
 We could implement special methods for something like a `LockCollection<Vec<i32>>` where we only lock the first three items.

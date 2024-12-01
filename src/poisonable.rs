@@ -1,8 +1,6 @@
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 
-use crate::lockable::{Lockable, RawLock};
-
 mod error;
 mod flag;
 mod guard;
@@ -92,3 +90,19 @@ pub type PoisonResult<Guard> = Result<Guard, PoisonError<Guard>>;
 /// lock might not have been acquired for other reasons.
 pub type TryLockPoisonableResult<'flag, 'key, G, Key> =
 	Result<PoisonGuard<'flag, 'key, G, Key>, TryLockPoisonableError<'flag, 'key, G, Key>>;
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::{Mutex, ThreadKey};
+
+	#[test]
+	fn display_works() {
+		let key = ThreadKey::get().unwrap();
+		let mutex = Poisonable::new(Mutex::new("Hello, world!"));
+
+		let guard = mutex.lock(key).unwrap();
+
+		assert_eq!(guard.to_string(), "Hello, world!");
+	}
+}

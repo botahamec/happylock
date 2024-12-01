@@ -30,32 +30,41 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for RetryingLockCollection<L> {
 		let mut locks = Vec::new();
 		self.data.get_ptrs(&mut locks);
 
-		'outer: loop {
-			// safety: we have the thread key
-			locks[first_index].lock();
-			for (i, lock) in locks.iter().enumerate() {
-				if i == first_index {
-					continue;
-				}
-
-				// safety: we have the thread key
-				if !lock.try_lock() {
-					for lock in locks.iter().take(i) {
-						// safety: we already locked all of these
-						lock.unlock();
-					}
-
-					if first_index >= i {
-						// safety: this is already locked and can't be unlocked
-						//         by the previous loop
-						locks[first_index].unlock();
-					}
-
-					first_index = i;
-					continue 'outer;
-				}
-			}
+		if locks.is_empty() {
+			return;
 		}
+
+		unsafe {
+			'outer: loop {
+				// safety: we have the thread key
+				locks[first_index].lock();
+				for (i, lock) in locks.iter().enumerate() {
+					if i == first_index {
+						continue;
+					}
+
+					// safety: we have the thread key
+					if !lock.try_lock() {
+						for lock in locks.iter().take(i) {
+							// safety: we already locked all of these
+							lock.unlock();
+						}
+
+						if first_index >= i {
+							// safety: this is already locked and can't be unlocked
+							//         by the previous loop
+							locks[first_index].unlock();
+						}
+
+						first_index = i;
+						continue 'outer;
+					}
+				}
+
+				// safety: we locked all the data
+				break;
+			}
+		};
 	}
 
 	unsafe fn try_lock(&self) -> bool {
@@ -769,5 +778,85 @@ where
 	#[must_use]
 	pub fn iter_mut(&'a mut self) -> <&'a mut L as IntoIterator>::IntoIter {
 		self.into_iter()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::collection::BoxedLockCollection;
+	use crate::{Mutex, RwLock, ThreadKey};
+	use lock_api::{RawMutex, RawRwLock};
+
+	#[test]
+	fn nonduplicate_lock_references_are_allowed() {
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(0);
+		assert!(RetryingLockCollection::try_new([&mutex1, &mutex2]).is_some());
+	}
+
+	#[test]
+	fn duplicate_lock_references_are_disallowed() {
+		let mutex = Mutex::new(0);
+		assert!(RetryingLockCollection::try_new([&mutex, &mutex]).is_none());
+	}
+
+	#[test]
+	fn locks_all_inner_mutexes() {
+		let key = ThreadKey::get().unwrap();
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(0);
+		let collection = RetryingLockCollection::try_new([&mutex1, &mutex2]).unwrap();
+
+		let guard = collection.lock(key);
+
+		assert!(mutex1.is_locked());
+		assert!(mutex2.is_locked());
+
+		drop(guard);
+	}
+
+	#[test]
+	fn locks_all_inner_rwlocks() {
+		let key = ThreadKey::get().unwrap();
+		let rwlock1 = RwLock::new(0);
+		let rwlock2 = RwLock::new(0);
+		let collection = RetryingLockCollection::try_new([&rwlock1, &rwlock2]).unwrap();
+		// TODO Poisonable::read
+
+		let guard = collection.read(key);
+
+		assert!(rwlock1.is_locked());
+		assert!(rwlock2.is_locked());
+
+		drop(guard);
+	}
+
+	#[test]
+	fn works_with_other_collections() {
+		let key = ThreadKey::get().unwrap();
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(0);
+		let collection = BoxedLockCollection::try_new(
+			RetryingLockCollection::try_new([&mutex1, &mutex2]).unwrap(),
+		)
+		.unwrap();
+
+		let guard = collection.lock(key);
+
+		assert!(mutex1.is_locked());
+		assert!(mutex2.is_locked());
+		drop(guard);
+	}
+
+	#[test]
+	fn extend_collection() {
+		let mutex1 = Mutex::new(0);
+		let mutex2 = Mutex::new(0);
+		let mut collection = RetryingLockCollection::new(vec![mutex1]);
+
+		collection.extend([mutex2]);
+
+		assert_eq!(collection.into_inner().len(), 2);
 	}
 }

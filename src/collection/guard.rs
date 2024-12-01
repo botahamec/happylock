@@ -42,3 +42,19 @@ impl<'key, Guard, Key: Keyable> AsMut<Guard> for LockGuard<'key, Guard, Key> {
 		&mut self.guard
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use crate::collection::OwnedLockCollection;
+	use crate::{RwLock, ThreadKey};
+
+	use super::*;
+
+	#[test]
+	fn guard_display_works() {
+		let key = ThreadKey::get().unwrap();
+		let lock = OwnedLockCollection::new(RwLock::new("Hello, world!"));
+		let guard = lock.read(key);
+		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+}

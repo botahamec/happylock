@@ -83,7 +83,7 @@ impl ThreadKey {
 }
 
 /// A dumb lock that's just a wrapper for an [`AtomicBool`].
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct KeyCell {
 	is_locked: Cell<bool>,
 }
@@ -99,5 +99,28 @@ impl KeyCell {
 	/// from this `KeyCell` has been "lost".
 	pub unsafe fn force_unlock(&self) {
 		self.is_locked.set(false);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn thread_key_returns_some_on_first_call() {
+		assert!(ThreadKey::get().is_some());
+	}
+
+	#[test]
+	fn thread_key_returns_none_on_second_call() {
+		let key = ThreadKey::get();
+		assert!(ThreadKey::get().is_none());
+		drop(key);
+	}
+
+	#[test]
+	fn dropping_thread_key_allows_reobtaining() {
+		drop(ThreadKey::get());
+		assert!(ThreadKey::get().is_some())
 	}
 }

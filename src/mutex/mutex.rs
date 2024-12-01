@@ -199,6 +199,11 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 		}
 	}
 
+	/// Returns `true` if the mutex is currently locked
+	pub(crate) fn is_locked(&self) -> bool {
+		self.raw.is_locked()
+	}
+
 	/// Lock without a [`ThreadKey`]. It is undefined behavior to do this without
 	/// owning the [`ThreadKey`].
 	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<MutexRef<'_, T, R>> {

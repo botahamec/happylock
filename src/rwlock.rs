@@ -40,7 +40,6 @@ pub type ParkingRwLock<T> = RwLock<T, parking_lot::RawRwLock>;
 /// Locking the mutex on a thread that already locked it is impossible, due to
 /// the requirement of the [`ThreadKey`]. Therefore, this will never deadlock.
 ///
-///
 /// [`ThreadKey`]: `crate::ThreadKey`
 /// [`Mutex`]: `crate::mutex::Mutex`
 /// [`Deref`]: `std::ops::Deref`
@@ -111,4 +110,135 @@ pub struct RwLockWriteGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLo
 	rwlock: RwLockWriteRef<'a, T, R>,
 	thread_key: Key,
 	_phantom: PhantomData<&'key ()>,
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::ThreadKey;
+
+	use super::*;
+
+	#[test]
+	fn unlocked_when_initialized() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+
+		assert!(!lock.is_locked());
+		assert!(lock.try_write(key).is_some());
+	}
+
+	#[test]
+	fn read_lock_unlocked_when_initialized() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let reader = ReadLock::new(&lock);
+
+		assert!(reader.try_lock(key).is_some());
+	}
+
+	#[test]
+	fn write_lock_unlocked_when_initialized() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let writer = WriteLock::new(&lock);
+
+		assert!(writer.try_lock(key).is_some());
+	}
+
+	#[test]
+	fn locked_after_read() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+
+		let guard = lock.read(key);
+
+		assert!(lock.is_locked());
+		drop(guard)
+	}
+
+	#[test]
+	fn locked_after_using_read_lock() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let reader = ReadLock::new(&lock);
+
+		let guard = reader.lock(key);
+
+		assert!(lock.is_locked());
+		drop(guard)
+	}
+
+	#[test]
+	fn locked_after_write() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+
+		let guard = lock.write(key);
+
+		assert!(lock.is_locked());
+		drop(guard)
+	}
+
+	#[test]
+	fn locked_after_using_write_lock() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let writer = WriteLock::new(&lock);
+
+		let guard = writer.lock(key);
+
+		assert!(lock.is_locked());
+		drop(guard)
+	}
+
+	#[test]
+	fn read_display_works() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let guard = lock.read(key);
+		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+
+	#[test]
+	fn write_display_works() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let guard = lock.write(key);
+		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+
+	#[test]
+	fn read_ref_display_works() {
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let guard = unsafe { lock.try_read_no_key().unwrap() };
+		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+
+	#[test]
+	fn write_ref_display_works() {
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+		let guard = unsafe { lock.try_write_no_key().unwrap() };
+		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+
+	#[test]
+	fn dropping_read_ref_releases_rwlock() {
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+
+		let guard = unsafe { lock.try_read_no_key().unwrap() };
+		drop(guard);
+
+		assert!(!lock.is_locked());
+	}
+
+	#[test]
+	fn dropping_write_guard_releases_rwlock() {
+		let mut key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
+
+		let guard = lock.write(&mut key);
+		drop(guard);
+
+		assert!(!lock.is_locked());
+	}
 }
