@@ -1,5 +1,5 @@
 use std::cell::UnsafeCell;
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 
 use crate::{key::Keyable, lockable::RawLock};
 

@@ -626,7 +626,40 @@ unsafe impl<T: OwnedLockable> OwnedLockable for Vec<T> {}
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::Mutex;
+	use crate::{Mutex, RwLock};
+
+	#[test]
+	fn mut_ref_get_ptrs() {
+		let mut rwlock = RwLock::new(5);
+		let mutref = &mut rwlock;
+		let mut lock_ptrs = Vec::new();
+		mutref.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		assert!(std::ptr::addr_eq(lock_ptrs[0], mutref));
+	}
+
+	#[test]
+	fn read_lock_get_ptrs() {
+		let rwlock = RwLock::new(5);
+		let readlock = ReadLock::new(&rwlock);
+		let mut lock_ptrs = Vec::new();
+		readlock.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
+	}
+
+	#[test]
+	fn write_lock_get_ptrs() {
+		let rwlock = RwLock::new(5);
+		let writelock = WriteLock::new(&rwlock);
+		let mut lock_ptrs = Vec::new();
+		writelock.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
+	}
 
 	#[test]
 	fn array_get_ptrs_empty() {
@@ -689,6 +722,26 @@ mod tests {
 	}
 
 	#[test]
+	fn vec_as_mut() {
+		let mut locks: Vec<Mutex<i32>> = vec![Mutex::new(1), Mutex::new(2)];
+		let lock_ptrs = LockableAsMut::as_mut(&mut locks);
+
+		assert_eq!(lock_ptrs.len(), 2);
+		assert_eq!(*lock_ptrs[0], 1);
+		assert_eq!(*lock_ptrs[1], 2);
+	}
+
+	#[test]
+	fn vec_into_inner() {
+		let locks: Vec<Mutex<i32>> = vec![Mutex::new(1), Mutex::new(2)];
+		let lock_ptrs = LockableIntoInner::into_inner(locks);
+
+		assert_eq!(lock_ptrs.len(), 2);
+		assert_eq!(lock_ptrs[0], 1);
+		assert_eq!(lock_ptrs[1], 2);
+	}
+
+	#[test]
 	fn box_get_ptrs_empty() {
 		let locks: Box<[Mutex<()>]> = Box::from([]);
 		let mut lock_ptrs = Vec::new();
@@ -716,5 +769,15 @@ mod tests {
 		assert_eq!(lock_ptrs.len(), 2);
 		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[0], locks[0].raw())) }
 		unsafe { assert!(std::ptr::addr_eq(lock_ptrs[1], locks[1].raw())) }
+	}
+
+	#[test]
+	fn box_as_mut() {
+		let mut locks: Box<[Mutex<i32>]> = vec![Mutex::new(1), Mutex::new(2)].into_boxed_slice();
+		let lock_ptrs = LockableAsMut::as_mut(&mut locks);
+
+		assert_eq!(lock_ptrs.len(), 2);
+		assert_eq!(*lock_ptrs[0], 1);
+		assert_eq!(*lock_ptrs[1], 2);
 	}
 }

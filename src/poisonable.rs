@@ -94,6 +94,7 @@ pub type TryLockPoisonableResult<'flag, 'key, G, Key> =
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::lockable::Lockable;
 	use crate::{Mutex, ThreadKey};
 
 	#[test]
@@ -104,5 +105,16 @@ mod tests {
 		let guard = mutex.lock(key).unwrap();
 
 		assert_eq!(guard.to_string(), "Hello, world!");
+	}
+
+	#[test]
+	fn get_ptrs() {
+		let mutex = Mutex::new(5);
+		let poisonable = Poisonable::new(mutex);
+		let mut lock_ptrs = Vec::new();
+		poisonable.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &poisonable.inner));
 	}
 }
