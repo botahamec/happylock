@@ -6,7 +6,7 @@ use crate::key::Keyable;
 
 use super::{RwLock, RwLockWriteGuard, WriteLock};
 
-impl<'l, T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'l, T, R> {
+impl<T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -36,7 +36,7 @@ impl<'l, T, R> From<&'l RwLock<T, R>> for WriteLock<'l, T, R> {
 	}
 }
 
-impl<'l, T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<'l, T, R> {
+impl<T: ?Sized, R> AsRef<RwLock<T, R>> for WriteLock<'_, T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
 		self.0
 	}
@@ -59,13 +59,13 @@ impl<'l, T, R> WriteLock<'l, T, R> {
 	}
 }
 
-impl<'l, T: ?Sized, R: RawRwLock> WriteLock<'l, T, R> {
+impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	/// Locks the underlying [`RwLock`] with exclusive write access, blocking
 	/// the current until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
-	) -> RwLockWriteGuard<'_, 'key, T, Key, R> {
+	) -> RwLockWriteGuard<'s, 'key, T, Key, R> {
 		self.0.write(key)
 	}
 
@@ -73,7 +73,7 @@ impl<'l, T: ?Sized, R: RawRwLock> WriteLock<'l, T, R> {
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockWriteGuard<'_, 'key, T, Key, R>> {
+	) -> Option<RwLockWriteGuard<'s, 'key, T, Key, R>> {
 		self.0.try_write(key)
 	}
 

@@ -6,7 +6,7 @@ use crate::key::Keyable;
 
 use super::{ReadLock, RwLock, RwLockReadGuard, RwLockReadRef};
 
-impl<'l, T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'l, T, R> {
+impl<T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -34,7 +34,7 @@ impl<'l, T, R> From<&'l RwLock<T, R>> for ReadLock<'l, T, R> {
 	}
 }
 
-impl<'l, T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'l, T, R> {
+impl<T: ?Sized, R> AsRef<RwLock<T, R>> for ReadLock<'_, T, R> {
 	fn as_ref(&self) -> &RwLock<T, R> {
 		self.0
 	}
@@ -57,13 +57,13 @@ impl<'l, T, R> ReadLock<'l, T, R> {
 	}
 }
 
-impl<'l, T: ?Sized, R: RawRwLock> ReadLock<'l, T, R> {
+impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	/// Locks the underlying [`RwLock`] with shared read access, blocking the
 	/// current thread until it can be acquired.
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
-	) -> RwLockReadGuard<'_, 'key, T, Key, R> {
+	) -> RwLockReadGuard<'s, 'key, T, Key, R> {
 		self.0.read(key)
 	}
 
@@ -72,7 +72,7 @@ impl<'l, T: ?Sized, R: RawRwLock> ReadLock<'l, T, R> {
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockReadGuard<'_, 'key, T, Key, R>> {
+	) -> Option<RwLockReadGuard<'s, 'key, T, Key, R>> {
 		self.0.try_read(key)
 	}
 

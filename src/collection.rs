@@ -52,11 +52,11 @@ pub struct OwnedLockCollection<L> {
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
-
+//
 // This type was born when I eventually realized that I needed a self
 // referential structure. That used boxing, so I elected to make a more
 // efficient implementation (polonius please save us)
-
+//
 // This type caches the sorting order of the locks and the fact that it doesn't
 // contain any duplicates.
 pub struct RefLockCollection<'a, L> {
@@ -82,7 +82,7 @@ pub struct RefLockCollection<'a, L> {
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
-
+//
 // This type caches the sorting order of the locks and the fact that it doesn't
 // contain any duplicates.
 pub struct BoxedLockCollection<L> {
@@ -112,7 +112,7 @@ pub struct BoxedLockCollection<L> {
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
 /// [livelocking]: https://en.wikipedia.org/wiki/Deadlock#Livelock
-
+//
 // This type caches the fact that there are no duplicates
 #[derive(Debug)]
 pub struct RetryingLockCollection<L> {

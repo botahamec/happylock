@@ -1,5 +1,6 @@
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
-use std::{cell::UnsafeCell, marker::PhantomData};
+use std::marker::PhantomData;
 
 use lock_api::RawMutex;
 
@@ -66,7 +67,7 @@ impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
 	}
 }
 
-impl<T: ?Sized + Default, R: RawMutex> Default for Mutex<T, R> {
+impl<T: Default, R: RawMutex> Default for Mutex<T, R> {
 	fn default() -> Self {
 		Self::new(T::default())
 	}
@@ -150,7 +151,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'_, 'k, T, Key, R> {
+	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'s, 'k, T, Key, R> {
 		unsafe {
 			self.raw.lock();
 
@@ -190,7 +191,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	pub fn try_lock<'s, 'a: 's, 'k: 'a, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> Option<MutexGuard<'_, 'k, T, Key, R>> {
+	) -> Option<MutexGuard<'s, 'k, T, Key, R>> {
 		if self.raw.try_lock() {
 			// safety: we just locked the mutex
 			Some(unsafe { MutexGuard::new(self, key) })

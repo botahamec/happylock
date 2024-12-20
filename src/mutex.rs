@@ -148,7 +148,7 @@ pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
 ///
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
-
+//
 // This is the most lifetime-intensive thing I've ever written. Can I graduate
 // from borrow checker university now?
 pub struct MutexGuard<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> {

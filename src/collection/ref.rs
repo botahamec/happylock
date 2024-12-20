@@ -26,7 +26,7 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
 
-impl<'a, L> AsRef<L> for RefLockCollection<'a, L> {
+impl<L> AsRef<L> for RefLockCollection<'_, L> {
 	fn as_ref(&self) -> &L {
 		self.data
 	}
@@ -44,7 +44,7 @@ where
 	}
 }
 
-unsafe impl<'a, L: Lockable + Send + Sync> RawLock for RefLockCollection<'a, L> {
+unsafe impl<L: Lockable + Send + Sync> RawLock for RefLockCollection<'_, L> {
 	unsafe fn lock(&self) {
 		for lock in &self.locks {
 			lock.lock();
@@ -78,10 +78,16 @@ unsafe impl<'a, L: Lockable + Send + Sync> RawLock for RefLockCollection<'a, L> 
 	}
 }
 
-unsafe impl<'c, L: Lockable> Lockable for RefLockCollection<'c, L> {
-	type Guard<'g> = L::Guard<'g> where Self: 'g;
+unsafe impl<L: Lockable> Lockable for RefLockCollection<'_, L> {
+	type Guard<'g>
+		= L::Guard<'g>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
+	type ReadGuard<'g>
+		= L::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.extend_from_slice(&self.locks);
@@ -96,9 +102,9 @@ unsafe impl<'c, L: Lockable> Lockable for RefLockCollection<'c, L> {
 	}
 }
 
-unsafe impl<'c, L: Sharable> Sharable for RefLockCollection<'c, L> {}
+unsafe impl<L: Sharable> Sharable for RefLockCollection<'_, L> {}
 
-impl<'a, L: Debug> Debug for RefLockCollection<'a, L> {
+impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(RefLockCollection))
 			.field("data", self.data)

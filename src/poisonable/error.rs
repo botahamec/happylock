@@ -141,7 +141,7 @@ impl<T, Guard: DerefMut<Target = T>> PoisonError<Guard> {
 	}
 }
 
-impl<'flag, 'key, G, Key> fmt::Debug for TryLockPoisonableError<'flag, 'key, G, Key> {
+impl<G, Key> fmt::Debug for TryLockPoisonableError<'_, '_, G, Key> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
 			Self::Poisoned(..) => "Poisoned(..)".fmt(f),
@@ -150,7 +150,7 @@ impl<'flag, 'key, G, Key> fmt::Debug for TryLockPoisonableError<'flag, 'key, G, 
 	}
 }
 
-impl<'flag, 'key, G, Key> fmt::Display for TryLockPoisonableError<'flag, 'key, G, Key> {
+impl<G, Key> fmt::Display for TryLockPoisonableError<'_, '_, G, Key> {
 	#[cfg_attr(test, mutants::skip)]
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
@@ -161,7 +161,7 @@ impl<'flag, 'key, G, Key> fmt::Display for TryLockPoisonableError<'flag, 'key, G
 	}
 }
 
-impl<'flag, 'key, G, Key> Error for TryLockPoisonableError<'flag, 'key, G, Key> {}
+impl<G, Key> Error for TryLockPoisonableError<'_, '_, G, Key> {}
 
 impl<'flag, 'key, G, Key> From<PoisonError<PoisonGuard<'flag, 'key, G, Key>>>
 	for TryLockPoisonableError<'flag, 'key, G, Key>

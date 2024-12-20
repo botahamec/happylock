@@ -62,7 +62,7 @@ impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
 	}
 }
 
-impl<T: ?Sized + Default, R: RawRwLock> Default for RwLock<T, R> {
+impl<T: Default, R: RawRwLock> Default for RwLock<T, R> {
 	fn default() -> Self {
 		Self::new(T::default())
 	}
@@ -140,7 +140,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn read<'s, 'key: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> RwLockReadGuard<'_, 'key, T, Key, R> {
+	) -> RwLockReadGuard<'s, 'key, T, Key, R> {
 		unsafe {
 			self.raw.lock_shared();
 
@@ -172,7 +172,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn try_read<'s, 'key: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockReadGuard<'_, 'key, T, Key, R>> {
+	) -> Option<RwLockReadGuard<'s, 'key, T, Key, R>> {
 		unsafe {
 			if self.raw.try_lock_shared() {
 				// safety: the lock is locked first
@@ -233,7 +233,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn write<'s, 'key: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> RwLockWriteGuard<'_, 'key, T, Key, R> {
+	) -> RwLockWriteGuard<'s, 'key, T, Key, R> {
 		unsafe {
 			self.raw.lock_exclusive();
 
@@ -266,7 +266,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn try_write<'s, 'key: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockWriteGuard<'_, 'key, T, Key, R>> {
+	) -> Option<RwLockWriteGuard<'s, 'key, T, Key, R>> {
 		unsafe {
 			if self.raw.try_lock_exclusive() {
 				// safety: the lock is locked first

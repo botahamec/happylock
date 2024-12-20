@@ -14,7 +14,7 @@ use lock_api::{RawMutex, RawRwLock};
 /// A deadlock must never occur. The `unlock` method must correctly unlock the
 /// data. The `get_ptrs` method must be implemented correctly. The `Output`
 /// must be unlocked when it is dropped.
-
+//
 // Why not use a RawRwLock? Because that would be semantically incorrect, and I
 // don't want an INIT or GuardMarker associated item.
 // Originally, RawLock had a sister trait: RawSharableLock. I removed it
@@ -262,8 +262,14 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> RawLock for RwLock<T, R> {
 }
 
 unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
-	type Guard<'g> = MutexRef<'g, T, R> where Self: 'g;
-	type ReadGuard<'g> = MutexRef<'g, T, R> where Self: 'g;
+	type Guard<'g>
+		= MutexRef<'g, T, R>
+	where
+		Self: 'g;
+	type ReadGuard<'g>
+		= MutexRef<'g, T, R>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
@@ -279,9 +285,15 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
 }
 
 unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
-	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
+	type Guard<'g>
+		= RwLockWriteRef<'g, T, R>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
+	type ReadGuard<'g>
+		= RwLockReadRef<'g, T, R>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
@@ -305,7 +317,10 @@ impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
 }
 
 impl<T: Send, R: RawMutex + Send + Sync> LockableAsMut for Mutex<T, R> {
-	type Inner<'a> = &'a mut T where Self: 'a;
+	type Inner<'a>
+		= &'a mut T
+	where
+		Self: 'a;
 
 	fn as_mut(&mut self) -> Self::Inner<'_> {
 		self.get_mut()
@@ -321,7 +336,10 @@ impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
 }
 
 impl<T: Send, R: RawRwLock + Send + Sync> LockableAsMut for RwLock<T, R> {
-	type Inner<'a> = &'a mut T where Self: 'a;
+	type Inner<'a>
+		= &'a mut T
+	where
+		Self: 'a;
 
 	fn as_mut(&mut self) -> Self::Inner<'_> {
 		AsMut::as_mut(self)
@@ -334,10 +352,16 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
 
 unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
 
-unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'l, T, R> {
-	type Guard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R> {
+	type Guard<'g>
+		= RwLockReadRef<'g, T, R>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = RwLockReadRef<'g, T, R> where Self: 'g;
+	type ReadGuard<'g>
+		= RwLockReadRef<'g, T, R>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self.as_ref());
@@ -352,10 +376,16 @@ unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'l, T
 	}
 }
 
-unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'l, T, R> {
-	type Guard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R> {
+	type Guard<'g>
+		= RwLockWriteRef<'g, T, R>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = RwLockWriteRef<'g, T, R> where Self: 'g;
+	type ReadGuard<'g>
+		= RwLockWriteRef<'g, T, R>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self.as_ref());
@@ -372,15 +402,21 @@ unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'l, 
 
 // Technically, the exclusive locks can also be shared, but there's currently
 // no way to express that. I don't think I want to ever express that.
-unsafe impl<'l, T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'l, T, R> {}
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R> {}
 
 // Because both ReadLock and WriteLock hold references to RwLocks, they can't
 // implement OwnedLockable
 
 unsafe impl<T: Lockable> Lockable for &T {
-	type Guard<'g> = T::Guard<'g> where Self: 'g;
+	type Guard<'g>
+		= T::Guard<'g>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = T::ReadGuard<'g> where Self: 'g;
+	type ReadGuard<'g>
+		= T::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		(*self).get_ptrs(ptrs);
@@ -398,9 +434,15 @@ unsafe impl<T: Lockable> Lockable for &T {
 unsafe impl<T: Sharable> Sharable for &T {}
 
 unsafe impl<T: Lockable> Lockable for &mut T {
-	type Guard<'g> = T::Guard<'g> where Self: 'g;
+	type Guard<'g>
+		= T::Guard<'g>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = T::ReadGuard<'g> where Self: 'g;
+	type ReadGuard<'g>
+		= T::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		(**self).get_ptrs(ptrs)
@@ -416,7 +458,10 @@ unsafe impl<T: Lockable> Lockable for &mut T {
 }
 
 impl<T: LockableAsMut> LockableAsMut for &mut T {
-	type Inner<'a> = T::Inner<'a> where Self: 'a;
+	type Inner<'a>
+		= T::Inner<'a>
+	where
+		Self: 'a;
 
 	fn as_mut(&mut self) -> Self::Inner<'_> {
 		(*self).as_mut()
@@ -482,9 +527,15 @@ tuple_impls!(A B C D E F, 0 1 2 3 4 5);
 tuple_impls!(A B C D E F G, 0 1 2 3 4 5 6);
 
 unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
-	type Guard<'g> = [T::Guard<'g>; N] where Self: 'g;
+	type Guard<'g>
+		= [T::Guard<'g>; N]
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = [T::ReadGuard<'g>; N] where Self: 'g;
+	type ReadGuard<'g>
+		= [T::ReadGuard<'g>; N]
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
@@ -514,9 +565,15 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 }
 
 unsafe impl<T: Lockable> Lockable for Box<[T]> {
-	type Guard<'g> = Box<[T::Guard<'g>]> where Self: 'g;
+	type Guard<'g>
+		= Box<[T::Guard<'g>]>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
+	type ReadGuard<'g>
+		= Box<[T::ReadGuard<'g>]>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self.iter() {
@@ -535,9 +592,15 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 
 unsafe impl<T: Lockable> Lockable for Vec<T> {
 	// There's no reason why I'd ever want to extend a list of lock guards
-	type Guard<'g> = Box<[T::Guard<'g>]> where Self: 'g;
+	type Guard<'g>
+		= Box<[T::Guard<'g>]>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = Box<[T::ReadGuard<'g>]> where Self: 'g;
+	type ReadGuard<'g>
+		= Box<[T::ReadGuard<'g>]>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
@@ -558,7 +621,10 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 // but I think that'd require sealing up this trait
 
 impl<T: LockableAsMut, const N: usize> LockableAsMut for [T; N] {
-	type Inner<'a> = [T::Inner<'a>; N] where Self: 'a;
+	type Inner<'a>
+		= [T::Inner<'a>; N]
+	where
+		Self: 'a;
 
 	fn as_mut(&mut self) -> Self::Inner<'_> {
 		unsafe {
@@ -588,7 +654,10 @@ impl<T: LockableIntoInner, const N: usize> LockableIntoInner for [T; N] {
 }
 
 impl<T: LockableAsMut + 'static> LockableAsMut for Box<[T]> {
-	type Inner<'a> = Box<[T::Inner<'a>]> where Self: 'a;
+	type Inner<'a>
+		= Box<[T::Inner<'a>]>
+	where
+		Self: 'a;
 
 	fn as_mut(&mut self) -> Self::Inner<'_> {
 		self.iter_mut().map(LockableAsMut::as_mut).collect()
@@ -598,7 +667,10 @@ impl<T: LockableAsMut + 'static> LockableAsMut for Box<[T]> {
 // TODO: using edition 2024, impl LockableIntoInner for Box<[T]>
 
 impl<T: LockableAsMut + 'static> LockableAsMut for Vec<T> {
-	type Inner<'a> = Box<[T::Inner<'a>]> where Self: 'a;
+	type Inner<'a>
+		= Box<[T::Inner<'a>]>
+	where
+		Self: 'a;
 
 	fn as_mut(&mut self) -> Self::Inner<'_> {
 		self.iter_mut().map(LockableAsMut::as_mut).collect()
