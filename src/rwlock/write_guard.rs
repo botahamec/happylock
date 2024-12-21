@@ -5,6 +5,7 @@ use std::ops::{Deref, DerefMut};
 use lock_api::RawRwLock;
 
 use crate::key::Keyable;
+use crate::lockable::RawLock;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef};
 
@@ -56,7 +57,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> Drop for RwLockWriteRef<'a, T, R> {
 	fn drop(&mut self) {
 		// safety: this guard is being destroyed, so the data cannot be
 		//         accessed without locking again
-		unsafe { self.0.force_unlock_write() }
+		unsafe { self.0.raw_unlock() }
 	}
 }
 

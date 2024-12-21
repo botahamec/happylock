@@ -5,8 +5,98 @@ use std::marker::PhantomData;
 use lock_api::RawMutex;
 
 use crate::key::Keyable;
+use crate::lockable::{Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock};
+use crate::poisonable::PoisonFlag;
 
 use super::{Mutex, MutexGuard, MutexRef};
+
+unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
+	fn kill(&self) {
+		self.poison.poison();
+	}
+
+	unsafe fn raw_lock(&self) {
+		assert!(!self.poison.is_poisoned(), "The mutex has been killed");
+
+		self.raw.lock()
+	}
+
+	unsafe fn raw_try_lock(&self) -> bool {
+		if self.poison.is_poisoned() {
+			return false;
+		}
+
+		self.raw.try_lock()
+	}
+
+	unsafe fn raw_unlock(&self) {
+		self.raw.unlock()
+	}
+
+	// this is the closest thing to a read we can get, but Sharable isn't
+	// implemented for this
+	unsafe fn raw_read(&self) {
+		assert!(!self.poison.is_poisoned(), "The mutex has been killed");
+
+		self.raw.lock()
+	}
+
+	unsafe fn raw_try_read(&self) -> bool {
+		if self.poison.is_poisoned() {
+			return false;
+		}
+
+		self.raw.try_lock()
+	}
+
+	unsafe fn raw_unlock_read(&self) {
+		self.raw.unlock()
+	}
+}
+
+unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
+	type Guard<'g>
+		= MutexRef<'g, T, R>
+	where
+		Self: 'g;
+	type ReadGuard<'g>
+		= MutexRef<'g, T, R>
+	where
+		Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self);
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		MutexRef::new(self)
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		MutexRef::new(self)
+	}
+}
+
+impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
+	type Inner = T;
+
+	fn into_inner(self) -> Self::Inner {
+		self.into_inner()
+	}
+}
+
+impl<T: Send, R: RawMutex + Send + Sync> LockableAsMut for Mutex<T, R> {
+	type Inner<'a>
+		= &'a mut T
+	where
+		Self: 'a;
+
+	fn as_mut(&mut self) -> Self::Inner<'_> {
+		self.get_mut()
+	}
+}
+
+unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
 
 impl<T, R: RawMutex> Mutex<T, R> {
 	/// Create a new unlocked `Mutex`.
@@ -22,6 +112,7 @@ impl<T, R: RawMutex> Mutex<T, R> {
 	pub const fn new(data: T) -> Self {
 		Self {
 			raw: R::INIT,
+			poison: PoisonFlag::new(),
 			data: UnsafeCell::new(data),
 		}
 	}
@@ -153,7 +244,8 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// ```
 	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'s, 'k, T, Key, R> {
 		unsafe {
-			self.raw.lock();
+			// safety: we have the thread key
+			self.raw_lock();
 
 			// safety: we just locked the mutex
 			MutexGuard::new(self, key)
@@ -192,15 +284,16 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 		&'s self,
 		key: Key,
 	) -> Option<MutexGuard<'s, 'k, T, Key, R>> {
-		if self.raw.try_lock() {
-			// safety: we just locked the mutex
-			Some(unsafe { MutexGuard::new(self, key) })
-		} else {
-			None
+		unsafe {
+			// safety: we have the key to the mutex
+			self.raw_try_lock().then(||
+				// safety: we just locked the mutex
+				MutexGuard::new(self, key))
 		}
 	}
 
 	/// Returns `true` if the mutex is currently locked
+	#[cfg(test)]
 	pub(crate) fn is_locked(&self) -> bool {
 		self.raw.is_locked()
 	}
@@ -208,17 +301,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// Lock without a [`ThreadKey`]. It is undefined behavior to do this without
 	/// owning the [`ThreadKey`].
 	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<MutexRef<'_, T, R>> {
-		self.raw.try_lock().then_some(MutexRef(self, PhantomData))
-	}
-
-	/// Forcibly unlocks the `Lock`.
-	///
-	/// # Safety
-	///
-	/// This should only be called if there are no references to any
-	/// [`MutexGuard`]s for this mutex in the program.
-	pub(super) unsafe fn force_unlock(&self) {
-		self.raw.unlock();
+		self.raw_try_lock().then_some(MutexRef(self, PhantomData))
 	}
 
 	/// Consumes the [`MutexGuard`], and consequently unlocks its `Mutex`.
@@ -238,7 +321,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// ```
 	pub fn unlock<'a, 'k: 'a, Key: Keyable + 'k>(guard: MutexGuard<'a, 'k, T, Key, R>) -> Key {
 		unsafe {
-			guard.mutex.0.force_unlock();
+			guard.mutex.0.raw_unlock();
 		}
 		guard.thread_key
 	}

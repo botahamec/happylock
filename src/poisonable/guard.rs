@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::Ordering::Relaxed;
 
 use crate::Keyable;
 
@@ -23,7 +22,7 @@ impl<Guard> Drop for PoisonRef<'_, Guard> {
 	fn drop(&mut self) {
 		#[cfg(panic = "unwind")]
 		if std::thread::panicking() {
-			self.flag.0.store(true, Relaxed);
+			self.flag.poison();
 		}
 	}
 }

@@ -12,49 +12,62 @@ fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 }
 
 unsafe impl<L: Lockable + Send + Sync> RawLock for OwnedLockCollection<L> {
-	unsafe fn lock(&self) {
+	fn kill(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
-			lock.lock();
+			lock.kill();
 		}
 	}
 
-	unsafe fn try_lock(&self) -> bool {
+	unsafe fn raw_lock(&self) {
+		let locks = get_locks(&self.data);
+		for lock in locks {
+			lock.raw_lock();
+		}
+	}
+
+	unsafe fn raw_try_lock(&self) -> bool {
 		let locks = get_locks(&self.data);
 		utils::ordered_try_lock(&locks)
 	}
 
-	unsafe fn unlock(&self) {
+	unsafe fn raw_unlock(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
-			lock.unlock();
+			lock.raw_unlock();
 		}
 	}
 
-	unsafe fn read(&self) {
+	unsafe fn raw_read(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
-			lock.read();
+			lock.raw_read();
 		}
 	}
 
-	unsafe fn try_read(&self) -> bool {
+	unsafe fn raw_try_read(&self) -> bool {
 		let locks = get_locks(&self.data);
 		utils::ordered_try_read(&locks)
 	}
 
-	unsafe fn unlock_read(&self) {
+	unsafe fn raw_unlock_read(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
-			lock.unlock_read();
+			lock.raw_unlock_read();
 		}
 	}
 }
 
 unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
-	type Guard<'g> = L::Guard<'g> where Self: 'g;
+	type Guard<'g>
+		= L::Guard<'g>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
+	type ReadGuard<'g>
+		= L::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.data.get_ptrs(ptrs)
@@ -196,7 +209,7 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 		for lock in locks {
 			// safety: we have the thread key, and these locks happen in a
 			//         predetermined order
-			unsafe { lock.lock() };
+			unsafe { lock.raw_lock() };
 		}
 
 		// safety: we've locked all of this already
@@ -310,7 +323,7 @@ impl<L: Sharable> OwnedLockCollection<L> {
 		for lock in locks {
 			// safety: we have the thread key, and these locks happen in a
 			//         predetermined order
-			unsafe { lock.read() };
+			unsafe { lock.raw_read() };
 		}
 
 		// safety: we've locked all of this already

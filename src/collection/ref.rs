@@ -10,7 +10,7 @@ use super::{utils, LockGuard, RefLockCollection};
 pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
-	locks.sort_by_key(|lock| *lock as *const dyn RawLock);
+	locks.sort_by_key(|lock| &raw const **lock);
 	locks
 }
 
@@ -45,35 +45,41 @@ where
 }
 
 unsafe impl<L: Lockable + Send + Sync> RawLock for RefLockCollection<'_, L> {
-	unsafe fn lock(&self) {
+	fn kill(&self) {
 		for lock in &self.locks {
-			lock.lock();
+			lock.kill();
 		}
 	}
 
-	unsafe fn try_lock(&self) -> bool {
+	unsafe fn raw_lock(&self) {
+		for lock in &self.locks {
+			lock.raw_lock();
+		}
+	}
+
+	unsafe fn raw_try_lock(&self) -> bool {
 		utils::ordered_try_lock(&self.locks)
 	}
 
-	unsafe fn unlock(&self) {
+	unsafe fn raw_unlock(&self) {
 		for lock in &self.locks {
-			lock.unlock();
+			lock.raw_unlock();
 		}
 	}
 
-	unsafe fn read(&self) {
+	unsafe fn raw_read(&self) {
 		for lock in &self.locks {
-			lock.read();
+			lock.raw_read();
 		}
 	}
 
-	unsafe fn try_read(&self) -> bool {
+	unsafe fn raw_try_read(&self) -> bool {
 		utils::ordered_try_read(&self.locks)
 	}
 
-	unsafe fn unlock_read(&self) {
+	unsafe fn raw_unlock_read(&self) {
 		for lock in &self.locks {
-			lock.unlock_read();
+			lock.raw_unlock_read();
 		}
 	}
 }
@@ -225,7 +231,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	) -> LockGuard<'key, L::Guard<'a>, Key> {
 		for lock in &self.locks {
 			// safety: we have the thread key
-			unsafe { lock.lock() };
+			unsafe { lock.raw_lock() };
 		}
 
 		LockGuard {
@@ -333,7 +339,7 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 	) -> LockGuard<'key, L::ReadGuard<'a>, Key> {
 		for lock in &self.locks {
 			// safety: we have the thread key
-			unsafe { lock.read() };
+			unsafe { lock.raw_read() };
 		}
 
 		LockGuard {

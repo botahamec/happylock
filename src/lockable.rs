@@ -1,11 +1,8 @@
 use std::mem::MaybeUninit;
 
-use crate::{
-	mutex::{Mutex, MutexRef},
-	rwlock::{ReadLock, RwLock, RwLockReadRef, RwLockWriteRef, WriteLock},
-};
+use crate::rwlock::{ReadLock, RwLock, RwLockReadRef, RwLockWriteRef, WriteLock};
 
-use lock_api::{RawMutex, RawRwLock};
+use lock_api::RawRwLock;
 
 /// A raw lock type that may be locked and unlocked
 ///
@@ -21,7 +18,11 @@ use lock_api::{RawMutex, RawRwLock};
 // because it'd be difficult to implement a separate type that takes a
 // different kind of RawLock. But now the Sharable marker trait is needed to
 // indicate if reads can be used.
-pub unsafe trait RawLock: Send + Sync {
+pub unsafe trait RawLock {
+	/// Causes all subsequent calls to the `lock` function on this lock to
+	/// panic. This does not affect anything currently holding the lock.
+	fn kill(&self);
+
 	/// Blocks until the lock is acquired
 	///
 	/// # Safety
@@ -31,7 +32,7 @@ pub unsafe trait RawLock: Send + Sync {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn lock(&self);
+	unsafe fn raw_lock(&self);
 
 	/// Attempt to lock without blocking.
 	///
@@ -44,14 +45,14 @@ pub unsafe trait RawLock: Send + Sync {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn try_lock(&self) -> bool;
+	unsafe fn raw_try_lock(&self) -> bool;
 
 	/// Releases the lock
 	///
 	/// # Safety
 	///
 	/// It is undefined behavior to use this if the lock is not acquired
-	unsafe fn unlock(&self);
+	unsafe fn raw_unlock(&self);
 
 	/// Blocks until the data the lock protects can be safely read.
 	///
@@ -66,7 +67,7 @@ pub unsafe trait RawLock: Send + Sync {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn read(&self);
+	unsafe fn raw_read(&self);
 
 	// Attempt to read without blocking.
 	///
@@ -83,14 +84,14 @@ pub unsafe trait RawLock: Send + Sync {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn try_read(&self) -> bool;
+	unsafe fn raw_try_read(&self) -> bool;
 
 	/// Releases the lock after calling `read`.
 	///
 	/// # Safety
 	///
 	/// It is undefined behavior to use this if the read lock is not acquired
-	unsafe fn unlock_read(&self);
+	unsafe fn raw_unlock_read(&self);
 }
 
 /// A type that may be locked and unlocked.
@@ -206,151 +207,6 @@ pub unsafe trait Sharable: Lockable {}
 /// There must not be any two values which can unlock the value at the same
 /// time, i.e., this must either be an owned value or a mutable reference.
 pub unsafe trait OwnedLockable: Lockable {}
-
-unsafe impl<T: Send, R: RawMutex + Send + Sync> RawLock for Mutex<T, R> {
-	unsafe fn lock(&self) {
-		self.raw().lock()
-	}
-
-	unsafe fn try_lock(&self) -> bool {
-		self.raw().try_lock()
-	}
-
-	unsafe fn unlock(&self) {
-		self.raw().unlock()
-	}
-
-	// this is the closest thing to a read we can get, but Sharable isn't
-	// implemented for this
-	unsafe fn read(&self) {
-		self.raw().lock()
-	}
-
-	unsafe fn try_read(&self) -> bool {
-		self.raw().try_lock()
-	}
-
-	unsafe fn unlock_read(&self) {
-		self.raw().unlock()
-	}
-}
-
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> RawLock for RwLock<T, R> {
-	unsafe fn lock(&self) {
-		self.raw().lock_exclusive()
-	}
-
-	unsafe fn try_lock(&self) -> bool {
-		self.raw().try_lock_exclusive()
-	}
-
-	unsafe fn unlock(&self) {
-		self.raw().unlock_exclusive()
-	}
-
-	unsafe fn read(&self) {
-		self.raw().lock_shared()
-	}
-
-	unsafe fn try_read(&self) -> bool {
-		self.raw().try_lock_shared()
-	}
-
-	unsafe fn unlock_read(&self) {
-		self.raw().unlock_shared()
-	}
-}
-
-unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
-	type Guard<'g>
-		= MutexRef<'g, T, R>
-	where
-		Self: 'g;
-	type ReadGuard<'g>
-		= MutexRef<'g, T, R>
-	where
-		Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		MutexRef::new(self)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		MutexRef::new(self)
-	}
-}
-
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
-	type Guard<'g>
-		= RwLockWriteRef<'g, T, R>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= RwLockReadRef<'g, T, R>
-	where
-		Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self);
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		RwLockWriteRef::new(self)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		RwLockReadRef::new(self)
-	}
-}
-
-impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
-	type Inner = T;
-
-	fn into_inner(self) -> Self::Inner {
-		self.into_inner()
-	}
-}
-
-impl<T: Send, R: RawMutex + Send + Sync> LockableAsMut for Mutex<T, R> {
-	type Inner<'a>
-		= &'a mut T
-	where
-		Self: 'a;
-
-	fn as_mut(&mut self) -> Self::Inner<'_> {
-		self.get_mut()
-	}
-}
-
-impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
-	type Inner = T;
-
-	fn into_inner(self) -> Self::Inner {
-		self.into_inner()
-	}
-}
-
-impl<T: Send, R: RawRwLock + Send + Sync> LockableAsMut for RwLock<T, R> {
-	type Inner<'a>
-		= &'a mut T
-	where
-		Self: 'a;
-
-	fn as_mut(&mut self) -> Self::Inner<'_> {
-		AsMut::as_mut(self)
-	}
-}
-
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {}
-
-unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
-
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
 
 unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R> {
 	type Guard<'g>

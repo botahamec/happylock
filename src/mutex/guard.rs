@@ -5,6 +5,7 @@ use std::ops::{Deref, DerefMut};
 use lock_api::RawMutex;
 
 use crate::key::Keyable;
+use crate::lockable::RawLock;
 
 use super::{Mutex, MutexGuard, MutexRef};
 
@@ -27,7 +28,7 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> Drop for MutexRef<'a, T, R> {
 	fn drop(&mut self) {
 		// safety: this guard is being destroyed, so the data cannot be
 		//         accessed without locking again
-		unsafe { self.0.force_unlock() }
+		unsafe { self.0.raw_unlock() }
 	}
 }
 

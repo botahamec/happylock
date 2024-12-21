@@ -4,8 +4,106 @@ use std::{cell::UnsafeCell, marker::PhantomData};
 use lock_api::RawRwLock;
 
 use crate::key::Keyable;
+use crate::lockable::{
+	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
+};
 
-use super::{RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
+use super::{PoisonFlag, RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
+
+unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
+	fn kill(&self) {
+		self.poison.poison();
+	}
+
+	unsafe fn raw_lock(&self) {
+		assert!(
+			!self.poison.is_poisoned(),
+			"The read-write lock has been killed"
+		);
+
+		self.raw.lock_exclusive()
+	}
+
+	unsafe fn raw_try_lock(&self) -> bool {
+		if self.poison.is_poisoned() {
+			return false;
+		}
+
+		self.raw.try_lock_exclusive()
+	}
+
+	unsafe fn raw_unlock(&self) {
+		self.raw.unlock_exclusive()
+	}
+
+	unsafe fn raw_read(&self) {
+		assert!(
+			!self.poison.is_poisoned(),
+			"The read-write lock has been killed"
+		);
+
+		self.raw.lock_shared()
+	}
+
+	unsafe fn raw_try_read(&self) -> bool {
+		if self.poison.is_poisoned() {
+			return false;
+		}
+
+		self.raw.try_lock_shared()
+	}
+
+	unsafe fn raw_unlock_read(&self) {
+		self.raw.unlock_shared()
+	}
+}
+
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
+	type Guard<'g>
+		= RwLockWriteRef<'g, T, R>
+	where
+		Self: 'g;
+
+	type ReadGuard<'g>
+		= RwLockReadRef<'g, T, R>
+	where
+		Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self);
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		RwLockWriteRef::new(self)
+	}
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		RwLockReadRef::new(self)
+	}
+}
+
+impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
+	type Inner = T;
+
+	fn into_inner(self) -> Self::Inner {
+		self.into_inner()
+	}
+}
+
+impl<T: Send, R: RawRwLock + Send + Sync> LockableAsMut for RwLock<T, R> {
+	type Inner<'a>
+		= &'a mut T
+	where
+		Self: 'a;
+
+	fn as_mut(&mut self) -> Self::Inner<'_> {
+		AsMut::as_mut(self)
+	}
+}
+
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {}
+
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
 
 impl<T, R: RawRwLock> RwLock<T, R> {
 	/// Creates a new instance of an `RwLock<T>` which is unlocked.
@@ -21,6 +119,7 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 	pub const fn new(data: T) -> Self {
 		Self {
 			data: UnsafeCell::new(data),
+			poison: PoisonFlag::new(),
 			raw: R::INIT,
 		}
 	}
@@ -142,7 +241,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		key: Key,
 	) -> RwLockReadGuard<'s, 'key, T, Key, R> {
 		unsafe {
-			self.raw.lock_shared();
+			self.raw_read();
 
 			// safety: the lock is locked first
 			RwLockReadGuard::new(self, key)
@@ -174,7 +273,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		key: Key,
 	) -> Option<RwLockReadGuard<'s, 'key, T, Key, R>> {
 		unsafe {
-			if self.raw.try_lock_shared() {
+			if self.raw_try_read() {
 				// safety: the lock is locked first
 				Some(RwLockReadGuard::new(self, key))
 			} else {
@@ -186,7 +285,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// Attempts to create a shared lock without a key. Locking this without
 	/// exclusive access to the key is undefined behavior.
 	pub(crate) unsafe fn try_read_no_key(&self) -> Option<RwLockReadRef<'_, T, R>> {
-		if self.raw.try_lock_shared() {
+		if self.raw_try_read() {
 			// safety: the lock is locked first
 			Some(RwLockReadRef(self, PhantomData))
 		} else {
@@ -196,8 +295,9 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 
 	/// Attempts to create an exclusive lock without a key. Locking this
 	/// without exclusive access to the key is undefined behavior.
+	#[cfg(test)]
 	pub(crate) unsafe fn try_write_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
-		if self.raw.try_lock_exclusive() {
+		if self.raw_try_lock() {
 			// safety: the lock is locked first
 			Some(RwLockWriteRef(self, PhantomData))
 		} else {
@@ -235,7 +335,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		key: Key,
 	) -> RwLockWriteGuard<'s, 'key, T, Key, R> {
 		unsafe {
-			self.raw.lock_exclusive();
+			self.raw_lock();
 
 			// safety: the lock is locked first
 			RwLockWriteGuard::new(self, key)
@@ -268,7 +368,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		key: Key,
 	) -> Option<RwLockWriteGuard<'s, 'key, T, Key, R>> {
 		unsafe {
-			if self.raw.try_lock_exclusive() {
+			if self.raw_try_lock() {
 				// safety: the lock is locked first
 				Some(RwLockWriteGuard::new(self, key))
 			} else {
@@ -278,20 +378,9 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	}
 
 	/// Returns `true` if the rwlock is currently locked in any way
+	#[cfg(test)]
 	pub(crate) fn is_locked(&self) -> bool {
 		self.raw.is_locked()
-	}
-
-	/// Unlocks shared access on the `RwLock`. This is undefined behavior is
-	/// the data is still accessible.
-	pub(super) unsafe fn force_unlock_read(&self) {
-		self.raw.unlock_shared();
-	}
-
-	/// Unlocks exclusive access on the `RwLock`. This is undefined behavior is
-	/// the data is still accessible.
-	pub(super) unsafe fn force_unlock_write(&self) {
-		self.raw.unlock_exclusive();
 	}
 
 	/// Immediately drops the guard, and consequently releases the shared lock.
@@ -316,7 +405,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		guard: RwLockReadGuard<'_, 'key, T, Key, R>,
 	) -> Key {
 		unsafe {
-			guard.rwlock.0.force_unlock_read();
+			guard.rwlock.0.raw_unlock_read();
 		}
 		guard.thread_key
 	}
@@ -344,7 +433,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		guard: RwLockWriteGuard<'_, 'key, T, Key, R>,
 	) -> Key {
 		unsafe {
-			guard.rwlock.0.force_unlock_write();
+			guard.rwlock.0.raw_unlock();
 		}
 		guard.thread_key
 	}

@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use lock_api::RawRwLock;
 
 use crate::key::Keyable;
+use crate::poisonable::PoisonFlag;
 
 mod rwlock;
 
@@ -46,6 +47,7 @@ pub type ParkingRwLock<T> = RwLock<T, parking_lot::RawRwLock>;
 /// [`DerefMut`]: `std::ops::DerefMut`
 pub struct RwLock<T: ?Sized, R> {
 	raw: R,
+	poison: PoisonFlag,
 	data: UnsafeCell<T>,
 }
 

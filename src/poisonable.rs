@@ -9,7 +9,7 @@ mod poisonable;
 /// A flag indicating if a lock is poisoned or not. The implementation differs
 /// depending on whether panics are set to unwind or abort.
 #[derive(Debug, Default)]
-struct PoisonFlag(#[cfg(panic = "unwind")] AtomicBool);
+pub(crate) struct PoisonFlag(#[cfg(panic = "unwind")] AtomicBool);
 
 /// A wrapper around [`Lockable`] types which will enable poisoning.
 ///

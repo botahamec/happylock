@@ -12,28 +12,32 @@ use super::{
 };
 
 unsafe impl<L: Lockable + RawLock> RawLock for Poisonable<L> {
-	unsafe fn lock(&self) {
-		self.inner.lock()
+	fn kill(&self) {
+		self.inner.kill()
 	}
 
-	unsafe fn try_lock(&self) -> bool {
-		self.inner.try_lock()
+	unsafe fn raw_lock(&self) {
+		self.inner.raw_lock()
 	}
 
-	unsafe fn unlock(&self) {
-		self.inner.unlock()
+	unsafe fn raw_try_lock(&self) -> bool {
+		self.inner.raw_try_lock()
 	}
 
-	unsafe fn read(&self) {
-		self.inner.read()
+	unsafe fn raw_unlock(&self) {
+		self.inner.raw_unlock()
 	}
 
-	unsafe fn try_read(&self) -> bool {
-		self.inner.try_read()
+	unsafe fn raw_read(&self) {
+		self.inner.raw_read()
 	}
 
-	unsafe fn unlock_read(&self) {
-		self.inner.unlock_read()
+	unsafe fn raw_try_read(&self) -> bool {
+		self.inner.raw_try_read()
+	}
+
+	unsafe fn raw_unlock_read(&self) {
+		self.inner.raw_unlock_read()
 	}
 }
 
@@ -285,7 +289,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 		key: Key,
 	) -> PoisonResult<PoisonGuard<'flag, 'key, L::Guard<'flag>, Key>> {
 		unsafe {
-			self.inner.lock();
+			self.inner.raw_lock();
 			self.guard(key)
 		}
 	}
@@ -339,7 +343,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 		key: Key,
 	) -> TryLockPoisonableResult<'flag, 'key, L::Guard<'flag>, Key> {
 		unsafe {
-			if self.inner.try_lock() {
+			if self.inner.raw_try_lock() {
 				Ok(self.guard(key)?)
 			} else {
 				Err(TryLockPoisonableError::WouldBlock(key))
@@ -426,7 +430,7 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 		key: Key,
 	) -> PoisonResult<PoisonGuard<'flag, 'key, L::ReadGuard<'flag>, Key>> {
 		unsafe {
-			self.inner.read();
+			self.inner.raw_read();
 			self.read_guard(key)
 		}
 	}
@@ -473,7 +477,7 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 		key: Key,
 	) -> TryLockPoisonableResult<'flag, 'key, L::ReadGuard<'flag>, Key> {
 		unsafe {
-			if self.inner.try_read() {
+			if self.inner.raw_try_read() {
 				Ok(self.read_guard(key)?)
 			} else {
 				Err(TryLockPoisonableError::WouldBlock(key))

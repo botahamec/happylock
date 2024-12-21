@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use lock_api::RawMutex;
 
 use crate::key::Keyable;
+use crate::poisonable::PoisonFlag;
 
 mod guard;
 mod mutex;
@@ -128,6 +129,7 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 /// [`ThreadKey`]: `crate::ThreadKey`
 pub struct Mutex<T: ?Sized, R> {
 	raw: R,
+	poison: PoisonFlag,
 	data: UnsafeCell<T>,
 }
 

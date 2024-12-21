@@ -48,8 +48,6 @@ mod tests {
 	use crate::collection::OwnedLockCollection;
 	use crate::{RwLock, ThreadKey};
 
-	use super::*;
-
 	#[test]
 	fn guard_display_works() {
 		let key = ThreadKey::get().unwrap();

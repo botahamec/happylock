@@ -16,6 +16,10 @@ impl PoisonFlag {
 	pub fn clear_poison(&self) {
 		self.0.store(false, Relaxed)
 	}
+
+	pub fn poison(&self) {
+		self.0.store(true, Relaxed);
+	}
 }
 
 #[cfg(not(panic = "unwind"))]

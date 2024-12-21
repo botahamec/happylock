@@ -21,43 +21,55 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 }
 
 unsafe impl<L: Lockable + Send + Sync> RawLock for BoxedLockCollection<L> {
-	unsafe fn lock(&self) {
-		for lock in self.locks() {
-			lock.lock();
+	fn kill(&self) {
+		for lock in &self.locks {
+			lock.kill();
 		}
 	}
 
-	unsafe fn try_lock(&self) -> bool {
+	unsafe fn raw_lock(&self) {
+		for lock in self.locks() {
+			lock.raw_lock();
+		}
+	}
+
+	unsafe fn raw_try_lock(&self) -> bool {
 		utils::ordered_try_lock(self.locks())
 	}
 
-	unsafe fn unlock(&self) {
+	unsafe fn raw_unlock(&self) {
 		for lock in self.locks() {
-			lock.unlock();
+			lock.raw_unlock();
 		}
 	}
 
-	unsafe fn read(&self) {
+	unsafe fn raw_read(&self) {
 		for lock in self.locks() {
-			lock.read();
+			lock.raw_read();
 		}
 	}
 
-	unsafe fn try_read(&self) -> bool {
+	unsafe fn raw_try_read(&self) -> bool {
 		utils::ordered_try_read(self.locks())
 	}
 
-	unsafe fn unlock_read(&self) {
+	unsafe fn raw_unlock_read(&self) {
 		for lock in self.locks() {
-			lock.unlock_read();
+			lock.raw_unlock_read();
 		}
 	}
 }
 
 unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
-	type Guard<'g> = L::Guard<'g> where Self: 'g;
+	type Guard<'g>
+		= L::Guard<'g>
+	where
+		Self: 'g;
 
-	type ReadGuard<'g> = L::ReadGuard<'g> where Self: 'g;
+	type ReadGuard<'g>
+		= L::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.extend(self.locks())
@@ -109,6 +121,8 @@ impl<L: OwnedLockable, I: FromIterator<L> + OwnedLockable> FromIterator<L>
 	}
 }
 
+// safety: the RawLocks must be send because they come from the Send Lockable
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<L: Send> Send for BoxedLockCollection<L> {}
 unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
 
@@ -261,11 +275,11 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		data_ref.get_ptrs(&mut locks);
 
 		// cast to *const () because fat pointers can't be converted to usize
-		locks.sort_by_key(|lock| (*lock as *const dyn RawLock).cast::<()>() as usize);
+		locks.sort_by_key(|lock| (&raw const **lock).cast::<()>() as usize);
 
 		// safety we're just changing the lifetimes
 		let locks: Vec<&'static dyn RawLock> = std::mem::transmute(locks);
-		let data = data as *const UnsafeCell<L>;
+		let data = &raw const *data;
 		Self { data, locks }
 	}
 
@@ -323,7 +337,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 	) -> LockGuard<'key, L::Guard<'g>, Key> {
 		for lock in self.locks() {
 			// safety: we have the thread key
-			unsafe { lock.lock() };
+			unsafe { lock.raw_lock() };
 		}
 
 		LockGuard {
@@ -427,7 +441,7 @@ impl<L: Sharable> BoxedLockCollection<L> {
 	) -> LockGuard<'key, L::ReadGuard<'g>, Key> {
 		for lock in self.locks() {
 			// safety: we have the thread key
-			unsafe { lock.read() };
+			unsafe { lock.raw_read() };
 		}
 
 		LockGuard {
