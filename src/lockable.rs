@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use crate::rwlock::{ReadLock, RwLock, RwLockReadRef, RwLockWriteRef, WriteLock};
+use crate::rwlock::{ReadLock, RwLockReadRef, RwLockWriteRef, WriteLock};
 
 use lock_api::RawRwLock;
 

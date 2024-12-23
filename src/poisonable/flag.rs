@@ -35,4 +35,8 @@ impl PoisonFlag {
 	pub fn clear_poison(&self) {
 		()
 	}
+
+	pub fn poison(&self) {
+		()
+	}
 }

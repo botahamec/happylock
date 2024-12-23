@@ -171,6 +171,9 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 					continue 'outer;
 				}
 			}
+
+			// safety: we locked all the data
+			break;
 		}
 	}
 
