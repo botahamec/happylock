@@ -1,5 +1,5 @@
 use std::alloc::Layout;
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -20,7 +20,7 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 		.any(|window| std::ptr::eq(window[0], window[1]))
 }
 
-unsafe impl<L: Lockable + Send + Sync> RawLock for BoxedLockCollection<L> {
+unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 	fn kill(&self) {
 		for lock in &self.locks {
 			lock.kill();
@@ -28,8 +28,15 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for BoxedLockCollection<L> {
 	}
 
 	unsafe fn raw_lock(&self) {
+		let locks = self.locks();
+		let locked = RefCell::new(Vec::with_capacity(locks.len()));
+		scopeguard::defer_on_unwind! {
+			utils::attempt_to_recover_locks_from_panic(&locked)
+		};
+
 		for lock in self.locks() {
 			lock.raw_lock();
+			locked.borrow_mut().push(*lock);
 		}
 	}
 
@@ -44,8 +51,15 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for BoxedLockCollection<L> {
 	}
 
 	unsafe fn raw_read(&self) {
+		let locks = self.locks();
+		let locked = RefCell::new(Vec::with_capacity(locks.len()));
+		scopeguard::defer_on_unwind! {
+			utils::attempt_to_recover_reads_from_panic(&locked)
+		};
+
 		for lock in self.locks() {
 			lock.raw_read();
+			locked.borrow_mut().push(*lock);
 		}
 	}
 
@@ -335,16 +349,16 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::Guard<'g>, Key> {
-		for lock in self.locks() {
+		unsafe {
 			// safety: we have the thread key
-			unsafe { lock.raw_lock() };
-		}
+			self.raw_lock();
 
-		LockGuard {
-			// safety: we've already acquired the lock
-			guard: unsafe { self.data().guard() },
-			key,
-			_phantom: PhantomData,
+			LockGuard {
+				// safety: we've already acquired the lock
+				guard: self.data().guard(),
+				key,
+				_phantom: PhantomData,
+			}
 		}
 	}
 
@@ -377,7 +391,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::Guard<'g>, Key>> {
 		let guard = unsafe {
-			if !utils::ordered_try_lock(self.locks()) {
+			if !self.raw_try_lock() {
 				return None;
 			}
 
@@ -439,16 +453,16 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::ReadGuard<'g>, Key> {
-		for lock in self.locks() {
+		unsafe {
 			// safety: we have the thread key
-			unsafe { lock.raw_read() };
-		}
+			self.raw_read();
 
-		LockGuard {
-			// safety: we've already acquired the lock
-			guard: unsafe { self.data().read_guard() },
-			key,
-			_phantom: PhantomData,
+			LockGuard {
+				// safety: we've already acquired the lock
+				guard: self.data().read_guard(),
+				key,
+				_phantom: PhantomData,
+			}
 		}
 	}
 
@@ -482,7 +496,8 @@ impl<L: Sharable> BoxedLockCollection<L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>> {
 		let guard = unsafe {
-			if !utils::ordered_try_read(self.locks()) {
+			// safety: we have the thread key
+			if !self.raw_try_read() {
 				return None;
 			}
 

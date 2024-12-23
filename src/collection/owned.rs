@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::marker::PhantomData;
 
 use crate::lockable::{Lockable, LockableIntoInner, OwnedLockable, RawLock, Sharable};
@@ -11,7 +12,7 @@ fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	locks
 }
 
-unsafe impl<L: Lockable + Send + Sync> RawLock for OwnedLockCollection<L> {
+unsafe impl<L: Lockable> RawLock for OwnedLockCollection<L> {
 	fn kill(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
@@ -21,8 +22,14 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for OwnedLockCollection<L> {
 
 	unsafe fn raw_lock(&self) {
 		let locks = get_locks(&self.data);
+		let locked = RefCell::new(Vec::with_capacity(locks.len()));
+		scopeguard::defer_on_unwind! {
+			utils::attempt_to_recover_locks_from_panic(&locked)
+		};
+
 		for lock in locks {
 			lock.raw_lock();
+			locked.borrow_mut().push(lock);
 		}
 	}
 
@@ -40,8 +47,14 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for OwnedLockCollection<L> {
 
 	unsafe fn raw_read(&self) {
 		let locks = get_locks(&self.data);
+		let locked = RefCell::new(Vec::with_capacity(locks.len()));
+		scopeguard::defer_on_unwind! {
+			utils::attempt_to_recover_reads_from_panic(&locked)
+		};
+
 		for lock in locks {
 			lock.raw_read();
+			locked.borrow_mut().push(lock);
 		}
 	}
 
@@ -205,15 +218,15 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::Guard<'g>, Key> {
-		let locks = get_locks(&self.data);
-		for lock in locks {
+		let guard = unsafe {
 			// safety: we have the thread key, and these locks happen in a
 			//         predetermined order
-			unsafe { lock.raw_lock() };
-		}
+			self.raw_lock();
 
-		// safety: we've locked all of this already
-		let guard = unsafe { self.data.guard() };
+			// safety: we've locked all of this already
+			self.data.guard()
+		};
+
 		LockGuard {
 			guard,
 			key,
@@ -250,9 +263,8 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> Option<LockGuard<'key, L::Guard<'g>, Key>> {
-		let locks = get_locks(&self.data);
 		let guard = unsafe {
-			if !utils::ordered_try_lock(&locks) {
+			if !self.raw_try_lock() {
 				return None;
 			}
 
@@ -319,19 +331,16 @@ impl<L: Sharable> OwnedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::ReadGuard<'g>, Key> {
-		let locks = get_locks(&self.data);
-		for lock in locks {
-			// safety: we have the thread key, and these locks happen in a
-			//         predetermined order
-			unsafe { lock.raw_read() };
-		}
+		unsafe {
+			// safety: we have the thread key
+			self.raw_read();
 
-		// safety: we've locked all of this already
-		let guard = unsafe { self.data.read_guard() };
-		LockGuard {
-			guard,
-			key,
-			_phantom: PhantomData,
+			LockGuard {
+				// safety: we've already acquired the lock
+				guard: self.data.read_guard(),
+				key,
+				_phantom: PhantomData,
+			}
 		}
 	}
 
@@ -365,9 +374,9 @@ impl<L: Sharable> OwnedLockCollection<L> {
 		&'g self,
 		key: Key,
 	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>> {
-		let locks = get_locks(&self.data);
 		let guard = unsafe {
-			if !utils::ordered_try_read(&locks) {
+			// safety: we have the thread key
+			if !self.raw_try_read() {
 				return None;
 			}
 

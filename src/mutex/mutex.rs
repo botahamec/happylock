@@ -18,6 +18,18 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 	unsafe fn raw_lock(&self) {
 		assert!(!self.poison.is_poisoned(), "The mutex has been killed");
 
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_lock() {
+				self.raw_unlock();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.lock()
 	}
 
@@ -26,31 +38,49 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 			return false;
 		}
 
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_lock() {
+				self.raw_unlock();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.try_lock()
 	}
 
 	unsafe fn raw_unlock(&self) {
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_lock() {
+				self.raw_unlock();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.unlock()
 	}
 
 	// this is the closest thing to a read we can get, but Sharable isn't
 	// implemented for this
 	unsafe fn raw_read(&self) {
-		assert!(!self.poison.is_poisoned(), "The mutex has been killed");
-
-		self.raw.lock()
+		self.raw_lock()
 	}
 
 	unsafe fn raw_try_read(&self) -> bool {
-		if self.poison.is_poisoned() {
-			return false;
-		}
-
-		self.raw.try_lock()
+		self.raw_try_lock()
 	}
 
 	unsafe fn raw_unlock_read(&self) {
-		self.raw.unlock()
+		self.raw_unlock()
 	}
 }
 

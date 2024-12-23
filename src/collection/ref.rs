@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -44,7 +45,7 @@ where
 	}
 }
 
-unsafe impl<L: Lockable + Send + Sync> RawLock for RefLockCollection<'_, L> {
+unsafe impl<L: Lockable> RawLock for RefLockCollection<'_, L> {
 	fn kill(&self) {
 		for lock in &self.locks {
 			lock.kill();
@@ -52,8 +53,15 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for RefLockCollection<'_, L> {
 	}
 
 	unsafe fn raw_lock(&self) {
+		let locks = &self.locks;
+		let locked = RefCell::new(Vec::with_capacity(locks.len()));
+		scopeguard::defer_on_unwind! {
+			utils::attempt_to_recover_locks_from_panic(&locked)
+		};
+
 		for lock in &self.locks {
 			lock.raw_lock();
+			locked.borrow_mut().push(*lock);
 		}
 	}
 
@@ -68,8 +76,15 @@ unsafe impl<L: Lockable + Send + Sync> RawLock for RefLockCollection<'_, L> {
 	}
 
 	unsafe fn raw_read(&self) {
+		let locks = &self.locks;
+		let locked = RefCell::new(Vec::with_capacity(locks.len()));
+		scopeguard::defer_on_unwind! {
+			utils::attempt_to_recover_reads_from_panic(&locked)
+		};
+
 		for lock in &self.locks {
 			lock.raw_read();
+			locked.borrow_mut().push(*lock);
 		}
 	}
 
@@ -229,14 +244,16 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 		&'a self,
 		key: Key,
 	) -> LockGuard<'key, L::Guard<'a>, Key> {
-		for lock in &self.locks {
+		let guard = unsafe {
 			// safety: we have the thread key
-			unsafe { lock.raw_lock() };
-		}
+			self.raw_lock();
+
+			// safety: we've locked all of this already
+			self.data.guard()
+		};
 
 		LockGuard {
-			// safety: we've already acquired the lock
-			guard: unsafe { self.data.guard() },
+			guard,
 			key,
 			_phantom: PhantomData,
 		}
@@ -272,7 +289,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::Guard<'a>, Key>> {
 		let guard = unsafe {
-			if !utils::ordered_try_lock(&self.locks) {
+			if !self.raw_try_lock() {
 				return None;
 			}
 
@@ -337,16 +354,16 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 		&'a self,
 		key: Key,
 	) -> LockGuard<'key, L::ReadGuard<'a>, Key> {
-		for lock in &self.locks {
+		unsafe {
 			// safety: we have the thread key
-			unsafe { lock.raw_read() };
-		}
+			self.raw_read();
 
-		LockGuard {
-			// safety: we've already acquired the lock
-			guard: unsafe { self.data.read_guard() },
-			key,
-			_phantom: PhantomData,
+			LockGuard {
+				// safety: we've already acquired the lock
+				guard: self.data.read_guard(),
+				key,
+				_phantom: PhantomData,
+			}
 		}
 	}
 
@@ -381,7 +398,8 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 		key: Key,
 	) -> Option<LockGuard<'key, L::ReadGuard<'a>, Key>> {
 		let guard = unsafe {
-			if !utils::ordered_try_read(&self.locks) {
+			// safety: we have the thread key
+			if !self.raw_try_read() {
 				return None;
 			}
 

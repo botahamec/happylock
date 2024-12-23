@@ -21,6 +21,18 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			"The read-write lock has been killed"
 		);
 
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_lock() {
+				self.raw_unlock();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.lock_exclusive()
 	}
 
@@ -29,10 +41,34 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			return false;
 		}
 
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_lock() {
+				self.raw_unlock();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.try_lock_exclusive()
 	}
 
 	unsafe fn raw_unlock(&self) {
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_lock() {
+				self.raw_unlock();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.unlock_exclusive()
 	}
 
@@ -42,6 +78,18 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			"The read-write lock has been killed"
 		);
 
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_read() {
+				self.raw_unlock_read();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.lock_shared()
 	}
 
@@ -50,10 +98,34 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			return false;
 		}
 
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_read() {
+				self.raw_unlock_read();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.try_lock_shared()
 	}
 
 	unsafe fn raw_unlock_read(&self) {
+		scopeguard::defer_on_unwind! {
+			scopeguard::defer_on_unwind! { self.kill() };
+			if self.raw_try_read() {
+				self.raw_unlock_read();
+			} else {
+				// We don't know whether this lock is locked by the current
+				// thread, or another thread. There's not much we can do other
+				// than kill it.
+				self.kill();
+			}
+		}
+
 		self.raw.unlock_shared()
 	}
 }
