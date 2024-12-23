@@ -1,6 +1,5 @@
 use core::fmt;
 use std::error::Error;
-use std::ops::{Deref, DerefMut};
 
 use super::{PoisonError, PoisonGuard, TryLockPoisonableError};
 
@@ -68,9 +67,7 @@ impl<Guard> PoisonError<Guard> {
 	pub fn into_inner(self) -> Guard {
 		self.guard
 	}
-}
 
-impl<T, Guard: Deref<Target = T>> PoisonError<Guard> {
 	/// Reaches into this error indicating that a lock is poisoned, returning a
 	/// reference to the underlying guard to allow access regardless.
 	///
@@ -82,6 +79,7 @@ impl<T, Guard: Deref<Target = T>> PoisonError<Guard> {
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
+	/// use happylock::poisonable::PoisonGuard;
 	///
 	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
 	///
@@ -96,16 +94,14 @@ impl<T, Guard: Deref<Target = T>> PoisonError<Guard> {
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let p_err = mutex.lock(key).unwrap_err();
-	/// let data = p_err.get_ref();
+	/// let data: &PoisonGuard<_, _> = p_err.get_ref();
 	/// println!("recovered {} items", data.len());
 	/// ```
 	#[must_use]
-	pub fn get_ref(&self) -> &T {
+	pub const fn get_ref(&self) -> &Guard {
 		&self.guard
 	}
-}
 
-impl<T, Guard: DerefMut<Target = T>> PoisonError<Guard> {
 	/// Reaches into this error indicating that a lock is poisoned, returning a
 	/// mutable reference to the underlying guard to allow access regardless.
 	///
@@ -136,7 +132,7 @@ impl<T, Guard: DerefMut<Target = T>> PoisonError<Guard> {
 	/// println!("recovered {} items", data.len());
 	/// ```
 	#[must_use]
-	pub fn get_mut(&mut self) -> &mut T {
+	pub fn get_mut(&mut self) -> &mut Guard {
 		&mut self.guard
 	}
 }

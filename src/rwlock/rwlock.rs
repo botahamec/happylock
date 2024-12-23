@@ -1,8 +1,11 @@
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
-use std::{cell::UnsafeCell, marker::PhantomData};
+use std::marker::PhantomData;
+use std::panic::AssertUnwindSafe;
 
 use lock_api::RawRwLock;
 
+use crate::handle_unwind::handle_unwind;
 use crate::key::Keyable;
 use crate::lockable::{
 	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
@@ -21,19 +24,9 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			"The read-write lock has been killed"
 		);
 
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_lock() {
-				self.raw_unlock();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.lock_exclusive()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.lock_exclusive(), || self.kill())
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -41,35 +34,15 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			return false;
 		}
 
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_lock() {
-				self.raw_unlock();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.try_lock_exclusive()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.try_lock_exclusive(), || self.kill())
 	}
 
 	unsafe fn raw_unlock(&self) {
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_lock() {
-				self.raw_unlock();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.unlock_exclusive()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.unlock_exclusive(), || self.kill())
 	}
 
 	unsafe fn raw_read(&self) {
@@ -78,19 +51,9 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			"The read-write lock has been killed"
 		);
 
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_read() {
-				self.raw_unlock_read();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.lock_shared()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.lock_shared(), || self.kill())
 	}
 
 	unsafe fn raw_try_read(&self) -> bool {
@@ -98,35 +61,15 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 			return false;
 		}
 
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_read() {
-				self.raw_unlock_read();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.try_lock_shared()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.try_lock_shared(), || self.kill())
 	}
 
 	unsafe fn raw_unlock_read(&self) {
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_read() {
-				self.raw_unlock_read();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.unlock_shared()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.unlock_shared(), || self.kill())
 	}
 }
 

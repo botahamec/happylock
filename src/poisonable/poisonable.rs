@@ -162,7 +162,7 @@ impl<L> Poisonable<L> {
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let x = mutex.lock(key).unwrap_or_else(|mut e| {
-	///     *e.get_mut() = 1;
+	///     **e.get_mut() = 1;
 	///     mutex.clear_poison();
 	///     e.into_inner()
 	/// });

@@ -164,6 +164,7 @@
 //! [`OwnedLockCollection`]: `collection::OwnedLockCollection`
 //! [`RetryingLockCollection`]: `collection::RetryingLockCollection`
 
+mod handle_unwind;
 mod key;
 
 pub mod collection;

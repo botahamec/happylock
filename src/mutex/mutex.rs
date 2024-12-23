@@ -1,9 +1,11 @@
 use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::panic::AssertUnwindSafe;
 
 use lock_api::RawMutex;
 
+use crate::handle_unwind::handle_unwind;
 use crate::key::Keyable;
 use crate::lockable::{Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock};
 use crate::poisonable::PoisonFlag;
@@ -18,19 +20,9 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 	unsafe fn raw_lock(&self) {
 		assert!(!self.poison.is_poisoned(), "The mutex has been killed");
 
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_lock() {
-				self.raw_unlock();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.lock()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.lock(), || self.kill())
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -38,35 +30,15 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 			return false;
 		}
 
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_lock() {
-				self.raw_unlock();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.try_lock()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.try_lock(), || self.kill())
 	}
 
 	unsafe fn raw_unlock(&self) {
-		scopeguard::defer_on_unwind! {
-			scopeguard::defer_on_unwind! { self.kill() };
-			if self.raw_try_lock() {
-				self.raw_unlock();
-			} else {
-				// We don't know whether this lock is locked by the current
-				// thread, or another thread. There's not much we can do other
-				// than kill it.
-				self.kill();
-			}
-		}
-
-		self.raw.unlock()
+		// if the closure unwraps, then the mutex will be killed
+		let this = AssertUnwindSafe(self);
+		handle_unwind(|| this.raw.unlock(), || self.kill())
 	}
 
 	// this is the closest thing to a read we can get, but Sharable isn't

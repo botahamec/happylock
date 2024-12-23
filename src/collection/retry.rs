@@ -1,4 +1,5 @@
 use crate::collection::utils;
+use crate::handle_unwind::handle_unwind;
 use crate::lockable::{
 	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
@@ -50,47 +51,46 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		}
 
 		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_locks_from_panic(&locked)
-		};
-
-		unsafe {
-			'outer: loop {
-				// safety: we have the thread key
-				locks[first_index].raw_lock();
-				for (i, lock) in locks.iter().enumerate() {
-					if i == first_index {
-						continue;
-					}
-
-					// If the lock has been killed, then this returns false
-					// instead of panicking. This sounds like a problem, but if
-					// it does return false, then the lock function is called
-					// immediately after, causing a panic
+		handle_unwind(
+			|| unsafe {
+				'outer: loop {
 					// safety: we have the thread key
-					if lock.raw_try_lock() {
-						locked.borrow_mut().push(*lock)
-					} else {
-						for lock in locks.iter().take(i) {
-							// safety: we already locked all of these
-							lock.raw_unlock();
+					locks[first_index].raw_lock();
+					for (i, lock) in locks.iter().enumerate() {
+						if i == first_index {
+							continue;
 						}
 
-						if first_index >= i {
-							// safety: this is already locked and can't be unlocked
-							//         by the previous loop
-							locks[first_index].raw_unlock();
-						}
+						// If the lock has been killed, then this returns false
+						// instead of panicking. This sounds like a problem, but if
+						// it does return false, then the lock function is called
+						// immediately after, causing a panic
+						// safety: we have the thread key
+						if lock.raw_try_lock() {
+							locked.borrow_mut().push(*lock)
+						} else {
+							for lock in locks.iter().take(i) {
+								// safety: we already locked all of these
+								lock.raw_unlock();
+							}
 
-						first_index = i;
-						continue 'outer;
+							if first_index >= i {
+								// safety: this is already locked and can't be unlocked
+								//         by the previous loop
+								locks[first_index].raw_unlock();
+							}
+
+							first_index = i;
+							continue 'outer;
+						}
 					}
-				}
 
-				// safety: we locked all the data
-				break;
-			}
-		};
+					// safety: we locked all the data
+					break;
+				}
+			},
+			|| utils::attempt_to_recover_locks_from_panic(&locked),
+		)
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -101,26 +101,25 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		}
 
 		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_locks_from_panic(&locked)
-		};
-
-		unsafe {
-			for (i, lock) in locks.iter().enumerate() {
-				// safety: we have the thread key
-				if lock.raw_try_lock() {
-					locked.borrow_mut().push(*lock);
-				} else {
-					for lock in locks.iter().take(i) {
-						// safety: we already locked all of these
-						lock.raw_unlock();
+		handle_unwind(
+			|| unsafe {
+				for (i, lock) in locks.iter().enumerate() {
+					// safety: we have the thread key
+					if lock.raw_try_lock() {
+						locked.borrow_mut().push(*lock);
+					} else {
+						for lock in locks.iter().take(i) {
+							// safety: we already locked all of these
+							lock.raw_unlock();
+						}
+						return false;
 					}
-					return false;
 				}
-			}
-		}
 
-		true
+				true
+			},
+			|| utils::attempt_to_recover_locks_from_panic(&locked),
+		)
 	}
 
 	unsafe fn raw_unlock(&self) {
@@ -140,41 +139,40 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		}
 
 		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_reads_from_panic(&locked)
-		};
-
-		'outer: loop {
-			// safety: we have the thread key
-			locks[first_index].raw_read();
-			for (i, lock) in locks.iter().enumerate() {
-				if i == first_index {
-					continue;
-				}
-
+		handle_unwind(
+			|| 'outer: loop {
 				// safety: we have the thread key
-				if lock.raw_try_read() {
-					locked.borrow_mut().push(*lock);
-				} else {
-					for lock in locks.iter().take(i) {
-						// safety: we already locked all of these
-						lock.raw_unlock_read();
+				locks[first_index].raw_read();
+				for (i, lock) in locks.iter().enumerate() {
+					if i == first_index {
+						continue;
 					}
 
-					if first_index >= i {
-						// safety: this is already locked and can't be unlocked
-						//         by the previous loop
-						locks[first_index].raw_unlock_read();
-					}
+					// safety: we have the thread key
+					if lock.raw_try_read() {
+						locked.borrow_mut().push(*lock);
+					} else {
+						for lock in locks.iter().take(i) {
+							// safety: we already locked all of these
+							lock.raw_unlock_read();
+						}
 
-					first_index = i;
-					continue 'outer;
+						if first_index >= i {
+							// safety: this is already locked and can't be unlocked
+							//         by the previous loop
+							locks[first_index].raw_unlock_read();
+						}
+
+						first_index = i;
+						continue 'outer;
+					}
 				}
-			}
 
-			// safety: we locked all the data
-			break;
-		}
+				// safety: we locked all the data
+				break;
+			},
+			|| utils::attempt_to_recover_reads_from_panic(&locked),
+		)
 	}
 
 	unsafe fn raw_try_read(&self) -> bool {
@@ -185,26 +183,25 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		}
 
 		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_reads_from_panic(&locked)
-		};
-
-		unsafe {
-			for (i, lock) in locks.iter().enumerate() {
-				// safety: we have the thread key
-				if lock.raw_try_read() {
-					locked.borrow_mut().push(*lock);
-				} else {
-					for lock in locks.iter().take(i) {
-						// safety: we already locked all of these
-						lock.raw_unlock_read();
+		handle_unwind(
+			|| unsafe {
+				for (i, lock) in locks.iter().enumerate() {
+					// safety: we have the thread key
+					if lock.raw_try_read() {
+						locked.borrow_mut().push(*lock);
+					} else {
+						for lock in locks.iter().take(i) {
+							// safety: we already locked all of these
+							lock.raw_unlock_read();
+						}
+						return false;
 					}
-					return false;
 				}
-			}
-		}
 
-		true
+				true
+			},
+			|| utils::attempt_to_recover_reads_from_panic(&locked),
+		)
 	}
 
 	unsafe fn raw_unlock_read(&self) {

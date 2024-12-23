@@ -1,5 +1,5 @@
 use std::alloc::Layout;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -28,16 +28,7 @@ unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 	}
 
 	unsafe fn raw_lock(&self) {
-		let locks = self.locks();
-		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_locks_from_panic(&locked)
-		};
-
-		for lock in self.locks() {
-			lock.raw_lock();
-			locked.borrow_mut().push(*lock);
-		}
+		utils::ordered_lock(self.locks())
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -51,16 +42,7 @@ unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 	}
 
 	unsafe fn raw_read(&self) {
-		let locks = self.locks();
-		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_reads_from_panic(&locked)
-		};
-
-		for lock in self.locks() {
-			lock.raw_read();
-			locked.borrow_mut().push(*lock);
-		}
+		utils::ordered_read(self.locks());
 	}
 
 	unsafe fn raw_try_read(&self) -> bool {
@@ -141,6 +123,7 @@ unsafe impl<L: Send> Send for BoxedLockCollection<L> {}
 unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
 
 impl<L> Drop for BoxedLockCollection<L> {
+	#[mutants::skip]
 	fn drop(&mut self) {
 		self.locks.clear();
 

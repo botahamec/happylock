@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::marker::PhantomData;
 
 use crate::lockable::{Lockable, LockableIntoInner, OwnedLockable, RawLock, Sharable};
@@ -21,16 +20,7 @@ unsafe impl<L: Lockable> RawLock for OwnedLockCollection<L> {
 	}
 
 	unsafe fn raw_lock(&self) {
-		let locks = get_locks(&self.data);
-		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_locks_from_panic(&locked)
-		};
-
-		for lock in locks {
-			lock.raw_lock();
-			locked.borrow_mut().push(lock);
-		}
+		utils::ordered_lock(&get_locks(&self.data))
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -46,16 +36,7 @@ unsafe impl<L: Lockable> RawLock for OwnedLockCollection<L> {
 	}
 
 	unsafe fn raw_read(&self) {
-		let locks = get_locks(&self.data);
-		let locked = RefCell::new(Vec::with_capacity(locks.len()));
-		scopeguard::defer_on_unwind! {
-			utils::attempt_to_recover_reads_from_panic(&locked)
-		};
-
-		for lock in locks {
-			lock.raw_read();
-			locked.borrow_mut().push(lock);
-		}
+		utils::ordered_read(&get_locks(&self.data))
 	}
 
 	unsafe fn raw_try_read(&self) -> bool {
