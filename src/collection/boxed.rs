@@ -62,11 +62,6 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 	where
 		Self: 'g;
 
-	type ReadGuard<'g>
-		= L::ReadGuard<'g>
-	where
-		Self: 'g;
-
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.extend(self.locks())
 	}
@@ -74,13 +69,18 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		self.data().guard()
 	}
+}
+
+unsafe impl<L: Sharable> Sharable for BoxedLockCollection<L> {
+	type ReadGuard<'g>
+		= L::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		self.data().read_guard()
 	}
 }
-
-unsafe impl<L: Sharable> Sharable for BoxedLockCollection<L> {}
 
 unsafe impl<L: OwnedLockable> OwnedLockable for BoxedLockCollection<L> {}
 

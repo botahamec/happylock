@@ -86,11 +86,6 @@ unsafe impl<L: Lockable> Lockable for RefLockCollection<'_, L> {
 	where
 		Self: 'g;
 
-	type ReadGuard<'g>
-		= L::ReadGuard<'g>
-	where
-		Self: 'g;
-
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.extend_from_slice(&self.locks);
 	}
@@ -98,13 +93,18 @@ unsafe impl<L: Lockable> Lockable for RefLockCollection<'_, L> {
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		self.data.guard()
 	}
+}
+
+unsafe impl<L: Sharable> Sharable for RefLockCollection<'_, L> {
+	type ReadGuard<'g>
+		= L::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		self.data.read_guard()
 	}
 }
-
-unsafe impl<L: Sharable> Sharable for RefLockCollection<'_, L> {}
 
 impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

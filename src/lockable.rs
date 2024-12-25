@@ -1,9 +1,5 @@
 use std::mem::MaybeUninit;
 
-use crate::rwlock::{ReadLock, RwLockReadRef, RwLockWriteRef, WriteLock};
-
-use lock_api::RawRwLock;
-
 /// A raw lock type that may be locked and unlocked
 ///
 /// # Safety
@@ -116,11 +112,6 @@ pub unsafe trait Lockable {
 	where
 		Self: 'g;
 
-	/// The shared guard type that does not hold a key
-	type ReadGuard<'g>
-	where
-		Self: 'g;
-
 	/// Yields a list of references to the [`RawLock`]s contained within this
 	/// value.
 	///
@@ -139,17 +130,6 @@ pub unsafe trait Lockable {
 	/// unlocked until this guard is dropped.
 	#[must_use]
 	unsafe fn guard(&self) -> Self::Guard<'_>;
-
-	/// Returns a guard that can be used to immutably access the underlying
-	/// data.
-	///
-	/// # Safety
-	///
-	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
-	/// [`RawLock::read`] before calling this function. The locks must not be
-	/// unlocked until this guard is dropped.
-	#[must_use]
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
 }
 
 /// A trait which indicates that `into_inner` is a valid operation for a
@@ -190,14 +170,24 @@ pub trait LockableAsMut: Lockable {
 	fn as_mut(&mut self) -> Self::Inner<'_>;
 }
 
-/// A marker trait to indicate that multiple readers can access the lock at a
-/// time.
-///
-/// # Safety
-///
-/// This type must only be implemented if the lock can be safely shared between
-/// multiple readers.
-pub unsafe trait Sharable: Lockable {}
+/// Allows a lock to be accessed by multiple readers.
+pub unsafe trait Sharable: Lockable {
+	/// The shared guard type that does not hold a key
+	type ReadGuard<'g>
+	where
+		Self: 'g;
+
+	/// Returns a guard that can be used to immutably access the underlying
+	/// data.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
+	/// [`RawLock::read`] before calling this function. The locks must not be
+	/// unlocked until this guard is dropped.
+	#[must_use]
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
+}
 
 /// A type that may be locked and unlocked, and is known to be the only valid
 /// instance of the lock.
@@ -208,69 +198,9 @@ pub unsafe trait Sharable: Lockable {}
 /// time, i.e., this must either be an owned value or a mutable reference.
 pub unsafe trait OwnedLockable: Lockable {}
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R> {
-	type Guard<'g>
-		= RwLockReadRef<'g, T, R>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= RwLockReadRef<'g, T, R>
-	where
-		Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self.as_ref());
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		RwLockReadRef::new(self.as_ref())
-	}
-
-	unsafe fn read_guard(&self) -> Self::Guard<'_> {
-		RwLockReadRef::new(self.as_ref())
-	}
-}
-
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R> {
-	type Guard<'g>
-		= RwLockWriteRef<'g, T, R>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= RwLockWriteRef<'g, T, R>
-	where
-		Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self.as_ref());
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		RwLockWriteRef::new(self.as_ref())
-	}
-
-	unsafe fn read_guard(&self) -> Self::Guard<'_> {
-		RwLockWriteRef::new(self.as_ref())
-	}
-}
-
-// Technically, the exclusive locks can also be shared, but there's currently
-// no way to express that. I don't think I want to ever express that.
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R> {}
-
-// Because both ReadLock and WriteLock hold references to RwLocks, they can't
-// implement OwnedLockable
-
 unsafe impl<T: Lockable> Lockable for &T {
 	type Guard<'g>
 		= T::Guard<'g>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= T::ReadGuard<'g>
 	where
 		Self: 'g;
 
@@ -281,22 +211,22 @@ unsafe impl<T: Lockable> Lockable for &T {
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(*self).guard()
 	}
+}
+
+unsafe impl<T: Sharable> Sharable for &T {
+	type ReadGuard<'g>
+		= T::ReadGuard<'g>
+	where
+		Self: 'g;
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		(*self).read_guard()
 	}
 }
 
-unsafe impl<T: Sharable> Sharable for &T {}
-
 unsafe impl<T: Lockable> Lockable for &mut T {
 	type Guard<'g>
 		= T::Guard<'g>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= T::ReadGuard<'g>
 	where
 		Self: 'g;
 
@@ -306,10 +236,6 @@ unsafe impl<T: Lockable> Lockable for &mut T {
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(**self).guard()
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		(**self).read_guard()
 	}
 }
 
@@ -324,7 +250,16 @@ impl<T: LockableAsMut> LockableAsMut for &mut T {
 	}
 }
 
-unsafe impl<T: Sharable> Sharable for &mut T {}
+unsafe impl<T: Sharable> Sharable for &mut T {
+	type ReadGuard<'g>
+		= T::ReadGuard<'g>
+	where
+		Self: 'g;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		(**self).read_guard()
+	}
+}
 
 unsafe impl<T: OwnedLockable> OwnedLockable for &mut T {}
 
@@ -335,7 +270,7 @@ macro_rules! tuple_impls {
 		unsafe impl<$($generic: Lockable,)*> Lockable for ($($generic,)*) {
 			type Guard<'g> = ($($generic::Guard<'g>,)*) where Self: 'g;
 
-			type ReadGuard<'g> = ($($generic::ReadGuard<'g>,)*) where Self: 'g;
+
 
 			fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 				self.0.get_ptrs(ptrs);
@@ -345,10 +280,6 @@ macro_rules! tuple_impls {
 				// It's weird that this works
 				// I don't think any other way of doing it compiles
 				($(self.$value.guard(),)*)
-			}
-
-			unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-				($(self.$value.read_guard(),)*)
 			}
 		}
 
@@ -368,7 +299,13 @@ macro_rules! tuple_impls {
 			}
 		}
 
-		unsafe impl<$($generic: Sharable,)*> Sharable for ($($generic,)*) {}
+		unsafe impl<$($generic: Sharable,)*> Sharable for ($($generic,)*) {
+			type ReadGuard<'g> = ($($generic::ReadGuard<'g>,)*) where Self: 'g;
+
+			unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+				($(self.$value.read_guard(),)*)
+			}
+		}
 
 		unsafe impl<$($generic: OwnedLockable,)*> OwnedLockable for ($($generic,)*) {}
 	};
@@ -388,11 +325,6 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 	where
 		Self: 'g;
 
-	type ReadGuard<'g>
-		= [T::ReadGuard<'g>; N]
-	where
-		Self: 'g;
-
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
@@ -409,72 +341,7 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 
 		guards.map(|g| g.assume_init())
 	}
-
-	unsafe fn read_guard<'g>(&'g self) -> Self::ReadGuard<'g> {
-		let mut guards = MaybeUninit::<[MaybeUninit<T::ReadGuard<'g>>; N]>::uninit().assume_init();
-		for i in 0..N {
-			guards[i].write(self[i].read_guard());
-		}
-
-		guards.map(|g| g.assume_init())
-	}
 }
-
-unsafe impl<T: Lockable> Lockable for Box<[T]> {
-	type Guard<'g>
-		= Box<[T::Guard<'g>]>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= Box<[T::ReadGuard<'g>]>
-	where
-		Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		for lock in self.iter() {
-			lock.get_ptrs(ptrs);
-		}
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		self.iter().map(|lock| lock.guard()).collect()
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		self.iter().map(|lock| lock.read_guard()).collect()
-	}
-}
-
-unsafe impl<T: Lockable> Lockable for Vec<T> {
-	// There's no reason why I'd ever want to extend a list of lock guards
-	type Guard<'g>
-		= Box<[T::Guard<'g>]>
-	where
-		Self: 'g;
-
-	type ReadGuard<'g>
-		= Box<[T::ReadGuard<'g>]>
-	where
-		Self: 'g;
-
-	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		for lock in self {
-			lock.get_ptrs(ptrs);
-		}
-	}
-
-	unsafe fn guard(&self) -> Self::Guard<'_> {
-		self.iter().map(|lock| lock.guard()).collect()
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		self.iter().map(|lock| lock.read_guard()).collect()
-	}
-}
-
-// I'd make a generic impl<T: Lockable, I: IntoIterator<Item=T>> Lockable for I
-// but I think that'd require sealing up this trait
 
 impl<T: LockableAsMut, const N: usize> LockableAsMut for [T; N] {
 	type Inner<'a>
@@ -509,6 +376,41 @@ impl<T: LockableIntoInner, const N: usize> LockableIntoInner for [T; N] {
 	}
 }
 
+unsafe impl<T: Sharable, const N: usize> Sharable for [T; N] {
+	type ReadGuard<'g>
+		= [T::ReadGuard<'g>; N]
+	where
+		Self: 'g;
+
+	unsafe fn read_guard<'g>(&'g self) -> Self::ReadGuard<'g> {
+		let mut guards = MaybeUninit::<[MaybeUninit<T::ReadGuard<'g>>; N]>::uninit().assume_init();
+		for i in 0..N {
+			guards[i].write(self[i].read_guard());
+		}
+
+		guards.map(|g| g.assume_init())
+	}
+}
+
+unsafe impl<T: OwnedLockable, const N: usize> OwnedLockable for [T; N] {}
+
+unsafe impl<T: Lockable> Lockable for Box<[T]> {
+	type Guard<'g>
+		= Box<[T::Guard<'g>]>
+	where
+		Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		for lock in self.iter() {
+			lock.get_ptrs(ptrs);
+		}
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		self.iter().map(|lock| lock.guard()).collect()
+	}
+}
+
 impl<T: LockableAsMut + 'static> LockableAsMut for Box<[T]> {
 	type Inner<'a>
 		= Box<[T::Inner<'a>]>
@@ -519,6 +421,51 @@ impl<T: LockableAsMut + 'static> LockableAsMut for Box<[T]> {
 		self.iter_mut().map(LockableAsMut::as_mut).collect()
 	}
 }
+
+unsafe impl<T: Sharable> Sharable for Box<[T]> {
+	type ReadGuard<'g>
+		= Box<[T::ReadGuard<'g>]>
+	where
+		Self: 'g;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		self.iter().map(|lock| lock.read_guard()).collect()
+	}
+}
+
+unsafe impl<T: Sharable> Sharable for Vec<T> {
+	type ReadGuard<'g>
+		= Box<[T::ReadGuard<'g>]>
+	where
+		Self: 'g;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		self.iter().map(|lock| lock.read_guard()).collect()
+	}
+}
+
+unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
+
+unsafe impl<T: Lockable> Lockable for Vec<T> {
+	// There's no reason why I'd ever want to extend a list of lock guards
+	type Guard<'g>
+		= Box<[T::Guard<'g>]>
+	where
+		Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		for lock in self {
+			lock.get_ptrs(ptrs);
+		}
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		self.iter().map(|lock| lock.guard()).collect()
+	}
+}
+
+// I'd make a generic impl<T: Lockable, I: IntoIterator<Item=T>> Lockable for I
+// but I think that'd require sealing up this trait
 
 // TODO: using edition 2024, impl LockableIntoInner for Box<[T]>
 
@@ -543,12 +490,6 @@ impl<T: LockableIntoInner> LockableIntoInner for Vec<T> {
 	}
 }
 
-unsafe impl<T: Sharable, const N: usize> Sharable for [T; N] {}
-unsafe impl<T: Sharable> Sharable for Box<[T]> {}
-unsafe impl<T: Sharable> Sharable for Vec<T> {}
-
-unsafe impl<T: OwnedLockable, const N: usize> OwnedLockable for [T; N] {}
-unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
 unsafe impl<T: OwnedLockable> OwnedLockable for Vec<T> {}
 
 #[cfg(test)]
@@ -565,28 +506,6 @@ mod tests {
 
 		assert_eq!(lock_ptrs.len(), 1);
 		assert!(std::ptr::addr_eq(lock_ptrs[0], mutref));
-	}
-
-	#[test]
-	fn read_lock_get_ptrs() {
-		let rwlock = RwLock::new(5);
-		let readlock = ReadLock::new(&rwlock);
-		let mut lock_ptrs = Vec::new();
-		readlock.get_ptrs(&mut lock_ptrs);
-
-		assert_eq!(lock_ptrs.len(), 1);
-		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
-	}
-
-	#[test]
-	fn write_lock_get_ptrs() {
-		let rwlock = RwLock::new(5);
-		let writelock = WriteLock::new(&rwlock);
-		let mut lock_ptrs = Vec::new();
-		writelock.get_ptrs(&mut lock_ptrs);
-
-		assert_eq!(lock_ptrs.len(), 1);
-		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
 	}
 
 	#[test]

@@ -79,21 +79,12 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
 	where
 		Self: 'g;
 
-	type ReadGuard<'g>
-		= RwLockReadRef<'g, T, R>
-	where
-		Self: 'g;
-
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		RwLockWriteRef::new(self)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		RwLockReadRef::new(self)
 	}
 }
 
@@ -116,7 +107,16 @@ impl<T: Send, R: RawRwLock + Send + Sync> LockableAsMut for RwLock<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {}
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {
+	type ReadGuard<'g>
+		= RwLockReadRef<'g, T, R>
+	where
+		Self: 'g;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		RwLockReadRef::new(self)
+	}
+}
 
 unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
 

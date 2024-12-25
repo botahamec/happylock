@@ -61,20 +61,12 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
 		= MutexRef<'g, T, R>
 	where
 		Self: 'g;
-	type ReadGuard<'g>
-		= MutexRef<'g, T, R>
-	where
-		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
-		MutexRef::new(self)
-	}
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		MutexRef::new(self)
 	}
 }

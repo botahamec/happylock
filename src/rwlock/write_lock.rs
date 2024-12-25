@@ -3,8 +3,24 @@ use std::fmt::Debug;
 use lock_api::RawRwLock;
 
 use crate::key::Keyable;
+use crate::lockable::{Lockable, RawLock};
 
-use super::{RwLock, RwLockWriteGuard, WriteLock};
+use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
+
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R> {
+	type Guard<'g>
+		= RwLockWriteRef<'g, T, R>
+	where
+		Self: 'g;
+
+	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		ptrs.push(self.as_ref());
+	}
+
+	unsafe fn guard(&self) -> Self::Guard<'_> {
+		RwLockWriteRef::new(self.as_ref())
+	}
+}
 
 impl<T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -116,6 +116,8 @@ pub struct RwLockWriteGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLo
 
 #[cfg(test)]
 mod tests {
+	use crate::lockable::Lockable;
+	use crate::RwLock;
 	use crate::ThreadKey;
 
 	use super::*;
@@ -145,6 +147,28 @@ mod tests {
 		let writer = WriteLock::new(&lock);
 
 		assert!(writer.try_lock(key).is_ok());
+	}
+
+	#[test]
+	fn read_lock_get_ptrs() {
+		let rwlock = RwLock::new(5);
+		let readlock = ReadLock::new(&rwlock);
+		let mut lock_ptrs = Vec::new();
+		readlock.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
+	}
+
+	#[test]
+	fn write_lock_get_ptrs() {
+		let rwlock = RwLock::new(5);
+		let writelock = WriteLock::new(&rwlock);
+		let mut lock_ptrs = Vec::new();
+		writelock.get_ptrs(&mut lock_ptrs);
+
+		assert_eq!(lock_ptrs.len(), 1);
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
 	}
 
 	#[test]

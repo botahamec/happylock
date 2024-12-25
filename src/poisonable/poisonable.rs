@@ -47,11 +47,6 @@ unsafe impl<L: Lockable> Lockable for Poisonable<L> {
 	where
 		Self: 'g;
 
-	type ReadGuard<'g>
-		= PoisonResult<PoisonRef<'g, L::ReadGuard<'g>>>
-	where
-		Self: 'g;
-
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.inner.get_ptrs(ptrs)
 	}
@@ -65,6 +60,13 @@ unsafe impl<L: Lockable> Lockable for Poisonable<L> {
 			Err(PoisonError::new(ref_guard))
 		}
 	}
+}
+
+unsafe impl<L: Sharable> Sharable for Poisonable<L> {
+	type ReadGuard<'g>
+		= PoisonResult<PoisonRef<'g, L::ReadGuard<'g>>>
+	where
+		Self: 'g;
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		let ref_guard = PoisonRef::new(&self.poisoned, self.inner.read_guard());
@@ -77,7 +79,6 @@ unsafe impl<L: Lockable> Lockable for Poisonable<L> {
 	}
 }
 
-unsafe impl<L: Sharable> Sharable for Poisonable<L> {}
 unsafe impl<L: OwnedLockable> OwnedLockable for Poisonable<L> {}
 
 impl<L> From<L> for Poisonable<L> {
