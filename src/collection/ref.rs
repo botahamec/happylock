@@ -268,17 +268,17 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	pub fn try_lock<'key: 'a, Key: Keyable + 'key>(
 		&'a self,
 		key: Key,
-	) -> Option<LockGuard<'key, L::Guard<'a>, Key>> {
+	) -> Result<LockGuard<'key, L::Guard<'a>, Key>, Key> {
 		let guard = unsafe {
 			if !self.raw_try_lock() {
-				return None;
+				return Err(key);
 			}
 
 			// safety: we've acquired the locks
 			self.data.guard()
 		};
 
-		Some(LockGuard {
+		Ok(LockGuard {
 			guard,
 			key,
 			_phantom: PhantomData,

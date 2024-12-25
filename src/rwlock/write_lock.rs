@@ -73,7 +73,7 @@ impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockWriteGuard<'s, 'key, T, Key, R>> {
+	) -> Result<RwLockWriteGuard<'s, 'key, T, Key, R>, Key> {
 		self.0.try_write(key)
 	}
 

@@ -126,7 +126,7 @@ mod tests {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 
 		assert!(!lock.is_locked());
-		assert!(lock.try_write(key).is_some());
+		assert!(lock.try_write(key).is_ok());
 	}
 
 	#[test]
@@ -135,7 +135,7 @@ mod tests {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 		let reader = ReadLock::new(&lock);
 
-		assert!(reader.try_lock(key).is_some());
+		assert!(reader.try_lock(key).is_ok());
 	}
 
 	#[test]
@@ -144,7 +144,7 @@ mod tests {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 		let writer = WriteLock::new(&lock);
 
-		assert!(writer.try_lock(key).is_some());
+		assert!(writer.try_lock(key).is_ok());
 	}
 
 	#[test]

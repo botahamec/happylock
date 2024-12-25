@@ -286,13 +286,13 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn try_read<'s, 'key: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockReadGuard<'s, 'key, T, Key, R>> {
+	) -> Result<RwLockReadGuard<'s, 'key, T, Key, R>, Key> {
 		unsafe {
 			if self.raw_try_read() {
 				// safety: the lock is locked first
-				Some(RwLockReadGuard::new(self, key))
+				Ok(RwLockReadGuard::new(self, key))
 			} else {
-				None
+				Err(key)
 			}
 		}
 	}
@@ -381,13 +381,13 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn try_write<'s, 'key: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockWriteGuard<'s, 'key, T, Key, R>> {
+	) -> Result<RwLockWriteGuard<'s, 'key, T, Key, R>, Key> {
 		unsafe {
 			if self.raw_try_lock() {
 				// safety: the lock is locked first
-				Some(RwLockWriteGuard::new(self, key))
+				Ok(RwLockWriteGuard::new(self, key))
 			} else {
-				None
+				Err(key)
 			}
 		}
 	}

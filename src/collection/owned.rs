@@ -243,17 +243,17 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 	pub fn try_lock<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
-	) -> Option<LockGuard<'key, L::Guard<'g>, Key>> {
+	) -> Result<LockGuard<'key, L::Guard<'g>, Key>, Key> {
 		let guard = unsafe {
 			if !self.raw_try_lock() {
-				return None;
+				return Err(key);
 			}
 
 			// safety: we've acquired the locks
 			self.data.guard()
 		};
 
-		Some(LockGuard {
+		Ok(LockGuard {
 			guard,
 			key,
 			_phantom: PhantomData,

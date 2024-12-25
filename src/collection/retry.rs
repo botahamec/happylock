@@ -513,15 +513,19 @@ impl<L: Lockable> RetryingLockCollection<L> {
 	pub fn try_lock<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
-	) -> Option<LockGuard<'key, L::Guard<'g>, Key>> {
+	) -> Result<LockGuard<'key, L::Guard<'g>, Key>, Key> {
 		unsafe {
 			// safety: we're taking the thread key
-			self.raw_try_lock().then(|| LockGuard {
-				// safety: we just succeeded in locking everything
-				guard: self.guard(),
-				key,
-				_phantom: PhantomData,
-			})
+			if self.raw_try_lock() {
+				Ok(LockGuard {
+					// safety: we just succeeded in locking everything
+					guard: self.guard(),
+					key,
+					_phantom: PhantomData,
+				})
+			} else {
+				Err(key)
+			}
 		}
 	}
 

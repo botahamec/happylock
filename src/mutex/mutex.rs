@@ -285,12 +285,15 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	pub fn try_lock<'s, 'a: 's, 'k: 'a, Key: Keyable>(
 		&'s self,
 		key: Key,
-	) -> Option<MutexGuard<'s, 'k, T, Key, R>> {
+	) -> Result<MutexGuard<'s, 'k, T, Key, R>, Key> {
 		unsafe {
 			// safety: we have the key to the mutex
-			self.raw_try_lock().then(||
+			if self.raw_try_lock() {
 				// safety: we just locked the mutex
-				MutexGuard::new(self, key))
+				Ok(MutexGuard::new(self, key))
+			} else {
+				Err(key)
+			}
 		}
 	}
 

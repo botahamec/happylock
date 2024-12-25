@@ -72,7 +72,7 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
-	) -> Option<RwLockReadGuard<'s, 'key, T, Key, R>> {
+	) -> Result<RwLockReadGuard<'s, 'key, T, Key, R>, Key> {
 		self.0.try_read(key)
 	}
 
