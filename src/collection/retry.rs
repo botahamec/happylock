@@ -1,7 +1,7 @@
 use crate::collection::utils;
 use crate::handle_unwind::handle_unwind;
 use crate::lockable::{
-	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
+	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
 use crate::Keyable;
 
@@ -22,7 +22,8 @@ fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 fn contains_duplicates<L: Lockable>(data: L) -> bool {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
-	let locks = locks.into_iter().map(|l| &raw const *l);
+	// cast to *const () so that the v-table pointers are not used for hashing
+	let locks = locks.into_iter().map(|l| (&raw const *l).cast::<()>());
 
 	let mut locks_set = HashSet::with_capacity(locks.len());
 	for lock in locks {
@@ -228,14 +229,14 @@ unsafe impl<L: Lockable> Lockable for RetryingLockCollection<L> {
 	}
 }
 
-impl<L: LockableAsMut> LockableAsMut for RetryingLockCollection<L> {
+impl<L: LockableGetMut> LockableGetMut for RetryingLockCollection<L> {
 	type Inner<'a>
 		= L::Inner<'a>
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
-		self.data.as_mut()
+	fn get_mut(&mut self) -> Self::Inner<'_> {
+		self.data.get_mut()
 	}
 }
 
@@ -311,15 +312,15 @@ impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for RetryingLockC
 	}
 }
 
-impl<L> AsRef<L> for RetryingLockCollection<L> {
-	fn as_ref(&self) -> &L {
-		&self.data
+impl<T, L: AsRef<T>> AsRef<T> for RetryingLockCollection<L> {
+	fn as_ref(&self) -> &T {
+		self.data.as_ref()
 	}
 }
 
-impl<L> AsMut<L> for RetryingLockCollection<L> {
-	fn as_mut(&mut self) -> &mut L {
-		&mut self.data
+impl<T, L: AsMut<T>> AsMut<T> for RetryingLockCollection<L> {
+	fn as_mut(&mut self) -> &mut T {
+		self.data.as_mut()
 	}
 }
 
@@ -378,7 +379,7 @@ impl<'a, L: OwnedLockable> RetryingLockCollection<&'a L> {
 	}
 }
 
-impl<L: Lockable> RetryingLockCollection<L> {
+impl<L> RetryingLockCollection<L> {
 	/// Creates a new collections of locks.
 	///
 	/// # Safety
@@ -404,6 +405,37 @@ impl<L: Lockable> RetryingLockCollection<L> {
 		Self { data }
 	}
 
+	pub const fn child(&self) -> &L {
+		&self.data
+	}
+
+	pub fn child_mut(&mut self) -> &mut L {
+		&mut self.data
+	}
+
+	/// Gets the underlying collection, consuming this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RetryingLockCollection;
+	///
+	/// let data = (Mutex::new(42), Mutex::new(""));
+	/// let lock = RetryingLockCollection::new(data);
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let inner = lock.into_child();
+	/// let guard = inner.0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
+	pub fn into_child(self) -> L {
+		self.data
+	}
+}
+
+impl<L: Lockable> RetryingLockCollection<L> {
 	/// Creates a new collection of locks.
 	///
 	/// This returns `None` if any locks are found twice in the given
@@ -425,27 +457,6 @@ impl<L: Lockable> RetryingLockCollection<L> {
 	#[must_use]
 	pub fn try_new(data: L) -> Option<Self> {
 		(!contains_duplicates(&data)).then_some(Self { data })
-	}
-
-	/// Gets the underlying collection, consuming this collection.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{Mutex, ThreadKey};
-	/// use happylock::collection::RetryingLockCollection;
-	///
-	/// let data = (Mutex::new(42), Mutex::new(""));
-	/// let lock = RetryingLockCollection::new(data);
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let inner = lock.into_inner();
-	/// let guard = inner.0.lock(key);
-	/// assert_eq!(*guard, 42);
-	/// ```
-	#[must_use]
-	pub fn into_inner(self) -> L {
-		self.data
 	}
 
 	/// Locks the collection
@@ -502,11 +513,11 @@ impl<L: Lockable> RetryingLockCollection<L> {
 	/// let lock = RetryingLockCollection::new(data);
 	///
 	/// match lock.try_lock(key) {
-	///     Some(mut guard) => {
+	///     Ok(mut guard) => {
 	///         *guard.0 += 1;
 	///         *guard.1 = "1";
 	///     },
-	///     None => unreachable!(),
+	///     Err(_) => unreachable!(),
 	/// };
 	///
 	/// ```
@@ -653,6 +664,18 @@ impl<L: Sharable> RetryingLockCollection<L> {
 	) -> Key {
 		drop(guard.guard);
 		guard.key
+	}
+}
+
+impl<L: LockableGetMut> RetryingLockCollection<L> {
+	pub fn get_mut(&mut self) -> L::Inner<'_> {
+		LockableGetMut::get_mut(self)
+	}
+}
+
+impl<L: LockableIntoInner> RetryingLockCollection<L> {
+	pub fn into_inner(self) -> L::Inner {
+		LockableIntoInner::into_inner(self)
 	}
 }
 

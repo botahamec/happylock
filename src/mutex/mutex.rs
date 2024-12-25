@@ -7,7 +7,7 @@ use lock_api::RawMutex;
 
 use crate::handle_unwind::handle_unwind;
 use crate::key::Keyable;
-use crate::lockable::{Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock};
+use crate::lockable::{Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock};
 use crate::poisonable::PoisonFlag;
 
 use super::{Mutex, MutexGuard, MutexRef};
@@ -79,13 +79,13 @@ impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
 	}
 }
 
-impl<T: Send, R: RawMutex + Send + Sync> LockableAsMut for Mutex<T, R> {
+impl<T: Send, R: RawMutex + Send + Sync> LockableGetMut for Mutex<T, R> {
 	type Inner<'a>
 		= &'a mut T
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
+	fn get_mut(&mut self) -> Self::Inner<'_> {
 		self.get_mut()
 	}
 }
@@ -264,7 +264,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// thread::spawn(move || {
 	///     let key = ThreadKey::get().unwrap();
 	///     let mut lock = c_mutex.try_lock(key);
-	///     if let Some(mut lock) = lock {
+	///     if let Ok(mut lock) = lock {
 	///         *lock = 10;
 	///     } else {
 	///         println!("try_lock failed");

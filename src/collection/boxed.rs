@@ -3,7 +3,7 @@ use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::lockable::{Lockable, OwnedLockable, RawLock, Sharable};
+use crate::lockable::{Lockable, LockableIntoInner, OwnedLockable, RawLock, Sharable};
 use crate::Keyable;
 
 use super::{utils, BoxedLockCollection, LockGuard};
@@ -17,7 +17,8 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 	}
 
 	l.windows(2)
-		.any(|window| std::ptr::eq(window[0], window[1]))
+		// NOTE: addr_eq is necessary because eq would also compare the v-table pointers
+		.any(|window| std::ptr::addr_eq(window[0], window[1]))
 }
 
 unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
@@ -67,7 +68,7 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
-		self.data().guard()
+		self.child().guard()
 	}
 }
 
@@ -78,11 +79,19 @@ unsafe impl<L: Sharable> Sharable for BoxedLockCollection<L> {
 		Self: 'g;
 
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		self.data().read_guard()
+		self.child().read_guard()
 	}
 }
 
 unsafe impl<L: OwnedLockable> OwnedLockable for BoxedLockCollection<L> {}
+
+impl<L: LockableIntoInner> LockableIntoInner for BoxedLockCollection<L> {
+	type Inner = L::Inner;
+
+	fn into_inner(self) -> Self::Inner {
+		LockableIntoInner::into_inner(self.into_child())
+	}
+}
 
 impl<L> IntoIterator for BoxedLockCollection<L>
 where
@@ -92,7 +101,7 @@ where
 	type IntoIter = <L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.into_inner().into_iter()
+		self.into_child().into_iter()
 	}
 }
 
@@ -104,7 +113,7 @@ where
 	type IntoIter = <&'a L as IntoIterator>::IntoIter;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.data().into_iter()
+		self.child().into_iter()
 	}
 }
 
@@ -125,16 +134,20 @@ unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
 impl<L> Drop for BoxedLockCollection<L> {
 	#[mutants::skip]
 	fn drop(&mut self) {
-		self.locks.clear();
+		unsafe {
+			// safety: this collection will never be locked again
+			self.locks.clear();
+			// safety: this was allocated using a box, and is now unique
+			let boxed: Box<UnsafeCell<L>> = Box::from_raw(self.data.cast_mut());
 
-		// safety: this was allocated using a box
-		unsafe { std::alloc::dealloc(self.data.cast_mut().cast(), Layout::new::<UnsafeCell<L>>()) }
+			drop(boxed)
+		}
 	}
 }
 
-impl<L> AsRef<L> for BoxedLockCollection<L> {
-	fn as_ref(&self) -> &L {
-		self.data()
+impl<T, L: AsRef<T>> AsRef<T> for BoxedLockCollection<L> {
+	fn as_ref(&self) -> &T {
+		self.child().as_ref()
 	}
 }
 
@@ -174,17 +187,24 @@ impl<L> BoxedLockCollection<L> {
 	/// let lock = LockCollection::try_new(&data).unwrap();
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let guard = lock.into_inner().0.lock(key);
+	/// let guard = lock.into_child().0.lock(key);
 	/// assert_eq!(*guard, 42);
 	/// ```
 	#[must_use]
-	pub fn into_inner(self) -> L {
-		// safety: this is owned, so no other references exist
-		unsafe { self.data.read().into_inner() }
+	pub fn into_child(mut self) -> L {
+		unsafe {
+			// safety: this collection will never be locked again
+			self.locks.clear();
+			// safety: this was allocated using a box, and is now unique
+			let boxed: Box<UnsafeCell<L>> = Box::from_raw(self.data.cast_mut());
+
+			boxed.into_inner()
+		}
 	}
 
 	/// Gets an immutable reference to the underlying data
-	fn data(&self) -> &L {
+	#[must_use]
+	pub fn child(&self) -> &L {
 		unsafe {
 			self.data
 				.as_ref()
@@ -338,7 +358,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 
 			LockGuard {
 				// safety: we've already acquired the lock
-				guard: self.data().guard(),
+				guard: self.child().guard(),
 				key,
 				_phantom: PhantomData,
 			}
@@ -361,11 +381,11 @@ impl<L: Lockable> BoxedLockCollection<L> {
 	/// let lock = LockCollection::new(data);
 	///
 	/// match lock.try_lock(key) {
-	///     Some(mut guard) => {
+	///     Ok(mut guard) => {
 	///         *guard.0 += 1;
 	///         *guard.1 = "1";
 	///     },
-	///     None => unreachable!(),
+	///     Err(_) => unreachable!(),
 	/// };
 	///
 	/// ```
@@ -379,7 +399,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 			}
 
 			// safety: we've acquired the locks
-			self.data().guard()
+			self.child().guard()
 		};
 
 		Ok(LockGuard {
@@ -442,7 +462,7 @@ impl<L: Sharable> BoxedLockCollection<L> {
 
 			LockGuard {
 				// safety: we've already acquired the lock
-				guard: self.data().read_guard(),
+				guard: self.child().read_guard(),
 				key,
 				_phantom: PhantomData,
 			}
@@ -485,7 +505,7 @@ impl<L: Sharable> BoxedLockCollection<L> {
 			}
 
 			// safety: we've acquired the locks
-			self.data().read_guard()
+			self.child().read_guard()
 		};
 
 		Some(LockGuard {

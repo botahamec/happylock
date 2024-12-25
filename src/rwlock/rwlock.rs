@@ -8,7 +8,7 @@ use lock_api::RawRwLock;
 use crate::handle_unwind::handle_unwind;
 use crate::key::Keyable;
 use crate::lockable::{
-	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
+	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
 
 use super::{PoisonFlag, RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
@@ -96,13 +96,13 @@ impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
 	}
 }
 
-impl<T: Send, R: RawRwLock + Send + Sync> LockableAsMut for RwLock<T, R> {
+impl<T: Send, R: RawRwLock + Send + Sync> LockableGetMut for RwLock<T, R> {
 	type Inner<'a>
 		= &'a mut T
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
+	fn get_mut(&mut self) -> Self::Inner<'_> {
 		AsMut::as_mut(self)
 	}
 }
@@ -279,8 +279,8 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// let lock = RwLock::new(1);
 	///
 	/// match lock.try_read(key) {
-	///     Some(n) => assert_eq!(*n, 1),
-	///     None => unreachable!(),
+	///     Ok(n) => assert_eq!(*n, 1),
+	///     Err(_) => unreachable!(),
 	/// };
 	/// ```
 	pub fn try_read<'s, 'key: 's, Key: Keyable>(

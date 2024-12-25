@@ -160,14 +160,14 @@ pub trait LockableIntoInner: Lockable {
 ///
 /// [`Poisonable`]: `crate::Poisonable`
 /// [`Poisonable::get_mut`]: `crate::poisonable::Poisonable::get_mut`
-pub trait LockableAsMut: Lockable {
+pub trait LockableGetMut: Lockable {
 	/// The inner type that is behind the lock
 	type Inner<'a>
 	where
 		Self: 'a;
 
 	/// Returns a mutable reference to the underlying data.
-	fn as_mut(&mut self) -> Self::Inner<'_>;
+	fn get_mut(&mut self) -> Self::Inner<'_>;
 }
 
 /// Allows a lock to be accessed by multiple readers.
@@ -239,14 +239,14 @@ unsafe impl<T: Lockable> Lockable for &mut T {
 	}
 }
 
-impl<T: LockableAsMut> LockableAsMut for &mut T {
+impl<T: LockableGetMut> LockableGetMut for &mut T {
 	type Inner<'a>
 		= T::Inner<'a>
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
-		(*self).as_mut()
+	fn get_mut(&mut self) -> Self::Inner<'_> {
+		(*self).get_mut()
 	}
 }
 
@@ -283,11 +283,11 @@ macro_rules! tuple_impls {
 			}
 		}
 
-		impl<$($generic: LockableAsMut,)*> LockableAsMut for ($($generic,)*) {
+		impl<$($generic: LockableGetMut,)*> LockableGetMut for ($($generic,)*) {
 			type Inner<'a> = ($($generic::Inner<'a>,)*) where Self: 'a;
 
-			fn as_mut(&mut self) -> Self::Inner<'_> {
-				($(self.$value.as_mut(),)*)
+			fn get_mut(&mut self) -> Self::Inner<'_> {
+				($(self.$value.get_mut(),)*)
 			}
 		}
 
@@ -343,17 +343,17 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 	}
 }
 
-impl<T: LockableAsMut, const N: usize> LockableAsMut for [T; N] {
+impl<T: LockableGetMut, const N: usize> LockableGetMut for [T; N] {
 	type Inner<'a>
 		= [T::Inner<'a>; N]
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
+	fn get_mut(&mut self) -> Self::Inner<'_> {
 		unsafe {
 			let mut guards = MaybeUninit::<[MaybeUninit<T::Inner<'_>>; N]>::uninit().assume_init();
 			for (i, lock) in self.iter_mut().enumerate() {
-				guards[i].write(lock.as_mut());
+				guards[i].write(lock.get_mut());
 			}
 
 			guards.map(|g| g.assume_init())
@@ -411,14 +411,14 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 	}
 }
 
-impl<T: LockableAsMut + 'static> LockableAsMut for Box<[T]> {
+impl<T: LockableGetMut + 'static> LockableGetMut for Box<[T]> {
 	type Inner<'a>
 		= Box<[T::Inner<'a>]>
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
-		self.iter_mut().map(LockableAsMut::as_mut).collect()
+	fn get_mut(&mut self) -> Self::Inner<'_> {
+		self.iter_mut().map(LockableGetMut::get_mut).collect()
 	}
 }
 
@@ -469,14 +469,14 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 
 // TODO: using edition 2024, impl LockableIntoInner for Box<[T]>
 
-impl<T: LockableAsMut + 'static> LockableAsMut for Vec<T> {
+impl<T: LockableGetMut + 'static> LockableGetMut for Vec<T> {
 	type Inner<'a>
 		= Box<[T::Inner<'a>]>
 	where
 		Self: 'a;
 
-	fn as_mut(&mut self) -> Self::Inner<'_> {
-		self.iter_mut().map(LockableAsMut::as_mut).collect()
+	fn get_mut(&mut self) -> Self::Inner<'_> {
+		self.iter_mut().map(LockableGetMut::get_mut).collect()
 	}
 }
 
@@ -571,7 +571,7 @@ mod tests {
 	#[test]
 	fn vec_as_mut() {
 		let mut locks: Vec<Mutex<i32>> = vec![Mutex::new(1), Mutex::new(2)];
-		let lock_ptrs = LockableAsMut::as_mut(&mut locks);
+		let lock_ptrs = LockableGetMut::get_mut(&mut locks);
 
 		assert_eq!(lock_ptrs.len(), 2);
 		assert_eq!(*lock_ptrs[0], 1);
@@ -621,7 +621,7 @@ mod tests {
 	#[test]
 	fn box_as_mut() {
 		let mut locks: Box<[Mutex<i32>]> = vec![Mutex::new(1), Mutex::new(2)].into_boxed_slice();
-		let lock_ptrs = LockableAsMut::as_mut(&mut locks);
+		let lock_ptrs = LockableGetMut::get_mut(&mut locks);
 
 		assert_eq!(lock_ptrs.len(), 2);
 		assert_eq!(*lock_ptrs[0], 1);

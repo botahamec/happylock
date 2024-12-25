@@ -23,13 +23,8 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 	}
 
 	l.windows(2)
-		.any(|window| std::ptr::eq(window[0], window[1]))
-}
-
-impl<L> AsRef<L> for RefLockCollection<'_, L> {
-	fn as_ref(&self) -> &L {
-		self.data
-	}
+		// NOTE: addr_eq is necessary because eq would also compare the v-table pointers
+		.any(|window| std::ptr::addr_eq(window[0], window[1]))
 }
 
 impl<'a, L> IntoIterator for &'a RefLockCollection<'a, L>
@@ -106,6 +101,12 @@ unsafe impl<L: Sharable> Sharable for RefLockCollection<'_, L> {
 	}
 }
 
+impl<T, L: AsRef<T>> AsRef<T> for RefLockCollection<'_, L> {
+	fn as_ref(&self) -> &T {
+		self.data.as_ref()
+	}
+}
+
 impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(RefLockCollection))
@@ -146,6 +147,13 @@ impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 			locks: get_locks(data),
 			data,
 		}
+	}
+}
+
+impl<L> RefLockCollection<'_, L> {
+	#[must_use]
+	pub const fn child(&self) -> &L {
+		self.data
 	}
 }
 
@@ -262,11 +270,11 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// let lock = RefLockCollection::new(&data);
 	///
 	/// match lock.try_lock(key) {
-	///     Some(mut guard) => {
+	///     Ok(mut guard) => {
 	///         *guard.0 += 1;
 	///         *guard.1 = "1";
 	///     },
-	///     None => unreachable!(),
+	///     Err(_) => unreachable!(),
 	/// };
 	///
 	/// ```

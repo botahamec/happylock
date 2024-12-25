@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::lockable::{Lockable, LockableIntoInner, OwnedLockable, RawLock, Sharable};
+use crate::lockable::{
+	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
+};
 use crate::Keyable;
 
 use super::{utils, LockGuard, OwnedLockCollection};
@@ -67,6 +69,17 @@ unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
 	}
 }
 
+impl<L: LockableGetMut> LockableGetMut for OwnedLockCollection<L> {
+	type Inner<'a>
+		= L::Inner<'a>
+	where
+		Self: 'a;
+
+	fn get_mut(&mut self) -> Self::Inner<'_> {
+		self.data.get_mut()
+	}
+}
+
 impl<L: LockableIntoInner> LockableIntoInner for OwnedLockCollection<L> {
 	type Inner = L::Inner;
 
@@ -115,9 +128,15 @@ impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for OwnedLockColl
 	}
 }
 
-impl<L: OwnedLockable> AsMut<L> for OwnedLockCollection<L> {
-	fn as_mut(&mut self) -> &mut L {
-		&mut self.data
+impl<T, L: AsRef<T>> AsRef<T> for OwnedLockCollection<L> {
+	fn as_ref(&self) -> &T {
+		self.data.as_ref()
+	}
+}
+
+impl<T, L: AsMut<T>> AsMut<T> for OwnedLockCollection<L> {
+	fn as_mut(&mut self) -> &mut T {
+		self.data.as_mut()
 	}
 }
 
@@ -152,27 +171,6 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 	#[must_use]
 	pub const fn new(data: L) -> Self {
 		Self { data }
-	}
-
-	/// Gets the underlying collection, consuming this collection.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// use happylock::{Mutex, ThreadKey};
-	/// use happylock::collection::OwnedLockCollection;
-	///
-	/// let data = (Mutex::new(42), Mutex::new(""));
-	/// let lock = OwnedLockCollection::new(data);
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let inner = lock.into_inner();
-	/// let guard = inner.0.lock(key);
-	/// assert_eq!(*guard, 42);
-	/// ```
-	#[must_use]
-	pub fn into_inner(self) -> L {
-		self.data
 	}
 
 	/// Locks the collection
@@ -232,11 +230,11 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 	/// let lock = OwnedLockCollection::new(data);
 	///
 	/// match lock.try_lock(key) {
-	///     Some(mut guard) => {
+	///     Ok(mut guard) => {
 	///         *guard.0 += 1;
 	///         *guard.1 = "1";
 	///     },
-	///     None => unreachable!(),
+	///     Err(_) => unreachable!(),
 	/// };
 	///
 	/// ```
@@ -394,6 +392,41 @@ impl<L: Sharable> OwnedLockCollection<L> {
 	) -> Key {
 		drop(guard.guard);
 		guard.key
+	}
+}
+
+impl<L> OwnedLockCollection<L> {
+	/// Gets the underlying collection, consuming this collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::OwnedLockCollection;
+	///
+	/// let data = (Mutex::new(42), Mutex::new(""));
+	/// let lock = OwnedLockCollection::new(data);
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let inner = lock.into_child();
+	/// let guard = inner.0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
+	pub fn into_child(self) -> L {
+		self.data
+	}
+}
+
+impl<L: LockableGetMut> OwnedLockCollection<L> {
+	pub fn get_mut(&mut self) -> L::Inner<'_> {
+		LockableGetMut::get_mut(self)
+	}
+}
+
+impl<L: LockableIntoInner> OwnedLockCollection<L> {
+	pub fn into_inner(self) -> L::Inner {
+		LockableIntoInner::into_inner(self)
 	}
 }
 

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use crate::lockable::{
-	Lockable, LockableAsMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
+	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
 use crate::Keyable;
 
@@ -80,6 +80,33 @@ unsafe impl<L: Sharable> Sharable for Poisonable<L> {
 }
 
 unsafe impl<L: OwnedLockable> OwnedLockable for Poisonable<L> {}
+
+impl<L: LockableGetMut> LockableGetMut for Poisonable<L> {
+	type Inner<'a>
+		= PoisonResult<L::Inner<'a>>
+	where
+		Self: 'a;
+
+	fn get_mut(&mut self) -> Self::Inner<'_> {
+		if self.is_poisoned() {
+			Err(PoisonError::new(self.inner.get_mut()))
+		} else {
+			Ok(self.inner.get_mut())
+		}
+	}
+}
+
+impl<L: LockableIntoInner> LockableIntoInner for Poisonable<L> {
+	type Inner = PoisonResult<L::Inner>;
+
+	fn into_inner(self) -> Self::Inner {
+		if self.is_poisoned() {
+			Err(PoisonError::new(self.inner.into_inner()))
+		} else {
+			Ok(self.inner.into_inner())
+		}
+	}
+}
 
 impl<L> From<L> for Poisonable<L> {
 	fn from(value: L) -> Self {
@@ -524,15 +551,11 @@ impl<L: LockableIntoInner> Poisonable<L> {
 	/// assert_eq!(mutex.into_inner().unwrap(), 0);
 	/// ```
 	pub fn into_inner(self) -> PoisonResult<L::Inner> {
-		if self.is_poisoned() {
-			Err(PoisonError::new(self.inner.into_inner()))
-		} else {
-			Ok(self.inner.into_inner())
-		}
+		LockableIntoInner::into_inner(self)
 	}
 }
 
-impl<L: LockableAsMut + RawLock> Poisonable<L> {
+impl<L: LockableGetMut + RawLock> Poisonable<L> {
 	/// Returns a mutable reference to the underlying data.
 	///
 	/// Since this call borrows the `Poisonable` mutable, no actual locking
@@ -555,11 +578,7 @@ impl<L: LockableAsMut + RawLock> Poisonable<L> {
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
 	pub fn get_mut(&mut self) -> PoisonResult<L::Inner<'_>> {
-		if self.is_poisoned() {
-			Err(PoisonError::new(self.inner.as_mut()))
-		} else {
-			Ok(self.inner.as_mut())
-		}
+		LockableGetMut::get_mut(self)
 	}
 }
 
