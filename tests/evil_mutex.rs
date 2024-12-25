@@ -48,7 +48,7 @@ fn boxed_mutexes() {
 	.join();
 
 	assert!(r.is_err());
-	assert!(good_mutex.try_lock(&mut key).is_some());
-	assert!(evil_mutex.try_lock(&mut key).is_none());
-	assert!(useless_mutex.try_lock(&mut key).is_some());
+	assert!(good_mutex.try_lock(&mut key).is_ok());
+	assert!(evil_mutex.try_lock(&mut key).is_ok());
+	assert!(useless_mutex.try_lock(&mut key).is_ok());
 }
