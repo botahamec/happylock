@@ -1,9 +1,7 @@
 use std::cell::Cell;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
-
-use once_cell::sync::Lazy;
-use thread_local::ThreadLocal;
+use std::sync::LazyLock;
 
 use sealed::Sealed;
 
@@ -17,10 +15,9 @@ mod sealed {
 	impl Sealed for &mut ThreadKey {}
 }
 
-// I am concerned that having multiple crates linked together with different
-// static variables could break my key system. Library code probably shouldn't
-// be creating keys at all.
-static KEY: Lazy<ThreadLocal<KeyCell>> = Lazy::new(ThreadLocal::new);
+thread_local! {
+	static KEY: LazyLock<KeyCell> = LazyLock::new(KeyCell::default);
+}
 
 /// The key for the current thread.
 ///
@@ -53,7 +50,7 @@ impl Drop for ThreadKey {
 	fn drop(&mut self) {
 		// safety: a thread key cannot be acquired without creating the lock
 		// safety: the key is lost, so it's safe to unlock the cell
-		unsafe { KEY.get().unwrap_unchecked().force_unlock() }
+		unsafe { KEY.with(|key| key.force_unlock()) }
 	}
 }
 
@@ -76,8 +73,10 @@ impl ThreadKey {
 		// safety: we just acquired the lock
 		// safety: if this code changes, check to ensure the requirement for
 		//         the Drop implementation is still true
-		KEY.get_or_default().try_lock().then_some(Self {
-			phantom: PhantomData,
+		KEY.with(|key| {
+			key.try_lock().then_some(Self {
+				phantom: PhantomData,
+			})
 		})
 	}
 }
@@ -91,7 +90,7 @@ struct KeyCell {
 impl KeyCell {
 	/// Attempt to lock the `KeyCell`. This is not a fair lock.
 	#[must_use]
-	pub fn try_lock(&'static self) -> bool {
+	pub fn try_lock(&self) -> bool {
 		!self.is_locked.replace(true)
 	}
 
