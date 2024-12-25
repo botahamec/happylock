@@ -114,6 +114,11 @@ impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	}
 }
 
+// safety: the RawLocks must be send because they come from the Send Lockable
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<L: Send> Send for RefLockCollection<'_, L> {}
+unsafe impl<L: Sync> Sync for RefLockCollection<'_, L> {}
+
 impl<'a, L: OwnedLockable + Default> From<&'a L> for RefLockCollection<'a, L> {
 	fn from(value: &'a L) -> Self {
 		Self::new(value)
