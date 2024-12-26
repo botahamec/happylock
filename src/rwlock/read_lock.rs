@@ -22,8 +22,6 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R>
 	}
 }
 
-// Technically, the exclusive locks can also be shared, but there's currently
-// no way to express that. I don't think I want to ever express that.
 unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R> {
 	type ReadGuard<'g>
 		= RwLockReadRef<'g, T, R>

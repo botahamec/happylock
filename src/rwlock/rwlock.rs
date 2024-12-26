@@ -88,6 +88,19 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
 	}
 }
 
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {
+	type ReadGuard<'g>
+		= RwLockReadRef<'g, T, R>
+	where
+		Self: 'g;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		RwLockReadRef::new(self)
+	}
+}
+
+unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
+
 impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
 	type Inner = T;
 
@@ -107,19 +120,6 @@ impl<T: Send, R: RawRwLock + Send + Sync> LockableGetMut for RwLock<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {
-	type ReadGuard<'g>
-		= RwLockReadRef<'g, T, R>
-	where
-		Self: 'g;
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		RwLockReadRef::new(self)
-	}
-}
-
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
-
 impl<T, R: RawRwLock> RwLock<T, R> {
 	/// Creates a new instance of an `RwLock<T>` which is unlocked.
 	///
@@ -137,20 +137,6 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 			poison: PoisonFlag::new(),
 			raw: R::INIT,
 		}
-	}
-
-	/// Returns the underlying raw reader-writer lock object.
-	///
-	/// Note that you will most likely need to import the [`RawRwLock`] trait
-	/// from `lock_api` to be able to call functions on the raw reader-writer
-	/// lock.
-	///
-	/// # Safety
-	///
-	/// This method is unsafe because it allows unlocking a mutex while
-	/// still holding a reference to a lock guard.
-	pub const unsafe fn raw(&self) -> &R {
-		&self.raw
 	}
 }
 
@@ -188,6 +174,9 @@ impl<T, R: RawRwLock> From<T> for RwLock<T, R> {
 	}
 }
 
+// We don't need a `get_mut` because we don't have mutex poisoning. Hurray!
+// This is safe because you can't have a mutable reference to the lock if it's
+// locked. Being locked requires an immutable reference because of the guard.
 impl<T: ?Sized, R> AsMut<T> for RwLock<T, R> {
 	fn as_mut(&mut self) -> &mut T {
 		self.data.get_mut()
@@ -213,6 +202,28 @@ impl<T, R> RwLock<T, R> {
 	#[must_use]
 	pub fn into_inner(self) -> T {
 		self.data.into_inner()
+	}
+}
+
+impl<T: ?Sized, R> RwLock<T, R> {
+	/// Returns a mutable reference to the underlying data.
+	///
+	/// Since this call borrows `RwLock` mutably, no actual locking is taking
+	/// place. The mutable borrow statically guarantees that no locks exist.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{ThreadKey, RwLock};
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let mut mutex = RwLock::new(0);
+	/// *mutex.get_mut() = 10;
+	/// assert_eq!(*mutex.read(key), 10);
+	/// ```
+	#[must_use]
+	pub fn get_mut(&mut self) -> &mut T {
+		self.data.get_mut()
 	}
 }
 

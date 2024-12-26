@@ -3,7 +3,9 @@ use std::cell::RefCell;
 use crate::handle_unwind::handle_unwind;
 use crate::lockable::RawLock;
 
+/// Lock a set of locks in the given order. It's UB to call this without a `ThreadKey`
 pub unsafe fn ordered_lock(locks: &[&dyn RawLock]) {
+	// these will be unlocked in case of a panic
 	let locked = RefCell::new(Vec::with_capacity(locks.len()));
 
 	handle_unwind(
@@ -17,6 +19,7 @@ pub unsafe fn ordered_lock(locks: &[&dyn RawLock]) {
 	)
 }
 
+/// Lock a set of locks in the given order. It's UB to call this without a `ThreadKey`
 pub unsafe fn ordered_read(locks: &[&dyn RawLock]) {
 	let locked = RefCell::new(Vec::with_capacity(locks.len()));
 
@@ -63,6 +66,7 @@ pub unsafe fn ordered_try_lock(locks: &[&dyn RawLock]) -> bool {
 /// Locks the locks in the order they are given. This causes deadlock if this
 /// is called by multiple threads with the locks in different orders.
 pub unsafe fn ordered_try_read(locks: &[&dyn RawLock]) -> bool {
+	// these will be unlocked in case of a panic
 	let locked = RefCell::new(Vec::with_capacity(locks.len()));
 
 	handle_unwind(
@@ -88,6 +92,7 @@ pub unsafe fn ordered_try_read(locks: &[&dyn RawLock]) -> bool {
 	)
 }
 
+/// Unlocks the already locked locks in order to recover from a panic
 pub unsafe fn attempt_to_recover_locks_from_panic(locked: &RefCell<Vec<&dyn RawLock>>) {
 	handle_unwind(
 		|| {
@@ -96,10 +101,12 @@ pub unsafe fn attempt_to_recover_locks_from_panic(locked: &RefCell<Vec<&dyn RawL
 				locked_lock.raw_unlock();
 			}
 		},
+		// if we get another panic in here, we'll just have to poison what remains
 		|| locked.borrow().iter().for_each(|l| l.poison()),
 	)
 }
 
+/// Unlocks the already locked locks in order to recover from a panic
 pub unsafe fn attempt_to_recover_reads_from_panic(locked: &RefCell<Vec<&dyn RawLock>>) {
 	handle_unwind(
 		|| {
@@ -108,6 +115,7 @@ pub unsafe fn attempt_to_recover_reads_from_panic(locked: &RefCell<Vec<&dyn RawL
 				locked_lock.raw_unlock_read();
 			}
 		},
+		// if we get another panic in here, we'll just have to poison what remains
 		|| locked.borrow().iter().for_each(|l| l.poison()),
 	)
 }

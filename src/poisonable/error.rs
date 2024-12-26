@@ -16,6 +16,18 @@ impl<Guard> fmt::Display for PoisonError<Guard> {
 	}
 }
 
+impl<Guard> AsRef<Guard> for PoisonError<Guard> {
+	fn as_ref(&self) -> &Guard {
+		self.get_ref()
+	}
+}
+
+impl<Guard> AsMut<Guard> for PoisonError<Guard> {
+	fn as_mut(&mut self) -> &mut Guard {
+		self.get_mut()
+	}
+}
+
 impl<Guard> Error for PoisonError<Guard> {}
 
 impl<Guard> PoisonError<Guard> {

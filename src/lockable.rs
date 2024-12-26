@@ -97,11 +97,10 @@ pub unsafe trait RawLock {
 ///
 /// # Safety
 ///
-/// Acquiring the locks returned by `get_ptrs` must allow for the values
-/// returned by `guard` or `read_guard` to be safely used for exclusive or
-/// shared access, respectively.
+/// Acquiring the locks returned by `get_ptrs` must allow access to the values
+/// returned by `guard`.
 ///
-/// Dropping the `Guard` and `ReadGuard` types must unlock those same locks.
+/// Dropping the `Guard` must unlock those same locks.
 ///
 /// The order of the resulting list from `get_ptrs` must be deterministic. As
 /// long as the value is not mutated, the references must always be in the same
@@ -131,6 +130,41 @@ pub unsafe trait Lockable {
 	#[must_use]
 	unsafe fn guard(&self) -> Self::Guard<'_>;
 }
+
+/// Allows a lock to be accessed by multiple readers.
+///
+/// # Safety
+///
+/// Acquiring shared access to the locks returned by `get_ptrs` must allow
+/// shared access to the values returned by `read_guard`.
+///
+/// Dropping the `ReadGuard` must unlock those same locks.
+pub unsafe trait Sharable: Lockable {
+	/// The shared guard type that does not hold a key
+	type ReadGuard<'g>
+	where
+		Self: 'g;
+
+	/// Returns a guard that can be used to immutably access the underlying
+	/// data.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
+	/// [`RawLock::read`] before calling this function. The locks must not be
+	/// unlocked until this guard is dropped.
+	#[must_use]
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
+}
+
+/// A type that may be locked and unlocked, and is known to be the only valid
+/// instance of the lock.
+///
+/// # Safety
+///
+/// There must not be any two values which can unlock the value at the same
+/// time, i.e., this must either be an owned value or a mutable reference.
+pub unsafe trait OwnedLockable: Lockable {}
 
 /// A trait which indicates that `into_inner` is a valid operation for a
 /// [`Lockable`].
@@ -169,34 +203,6 @@ pub trait LockableGetMut: Lockable {
 	/// Returns a mutable reference to the underlying data.
 	fn get_mut(&mut self) -> Self::Inner<'_>;
 }
-
-/// Allows a lock to be accessed by multiple readers.
-pub unsafe trait Sharable: Lockable {
-	/// The shared guard type that does not hold a key
-	type ReadGuard<'g>
-	where
-		Self: 'g;
-
-	/// Returns a guard that can be used to immutably access the underlying
-	/// data.
-	///
-	/// # Safety
-	///
-	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
-	/// [`RawLock::read`] before calling this function. The locks must not be
-	/// unlocked until this guard is dropped.
-	#[must_use]
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
-}
-
-/// A type that may be locked and unlocked, and is known to be the only valid
-/// instance of the lock.
-///
-/// # Safety
-///
-/// There must not be any two values which can unlock the value at the same
-/// time, i.e., this must either be an owned value or a mutable reference.
-pub unsafe trait OwnedLockable: Lockable {}
 
 unsafe impl<T: Lockable> Lockable for &T {
 	type Guard<'g>
@@ -401,7 +407,7 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 		Self: 'g;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		for lock in self.iter() {
+		for lock in self {
 			lock.get_ptrs(ptrs);
 		}
 	}

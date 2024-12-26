@@ -81,6 +81,8 @@ unsafe impl<L: Sharable> Sharable for Poisonable<L> {
 
 unsafe impl<L: OwnedLockable> OwnedLockable for Poisonable<L> {}
 
+// AsMut won't work here because we don't strictly return a &mut T
+// LockableGetMut is the next best thing
 impl<L: LockableGetMut> LockableGetMut for Poisonable<L> {
 	type Inner<'a>
 		= PoisonResult<L::Inner<'a>>

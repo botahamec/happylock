@@ -21,6 +21,7 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 }
 
 unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
+	#[mutants::skip] // this should never be called
 	fn poison(&self) {
 		for lock in &self.locks {
 			lock.poison();
@@ -84,6 +85,9 @@ unsafe impl<L: Sharable> Sharable for BoxedLockCollection<L> {
 
 unsafe impl<L: OwnedLockable> OwnedLockable for BoxedLockCollection<L> {}
 
+// LockableGetMut can't be implemented because that would create mutable and
+// immutable references to the same value at the same time.
+
 impl<L: LockableIntoInner> LockableIntoInner for BoxedLockCollection<L> {
 	type Inner = L::Inner;
 
@@ -131,7 +135,7 @@ unsafe impl<L: Send> Send for BoxedLockCollection<L> {}
 unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
 
 impl<L> Drop for BoxedLockCollection<L> {
-	#[mutants::skip]
+	#[mutants::skip] // i can't test for a memory leak
 	fn drop(&mut self) {
 		unsafe {
 			// safety: this collection will never be locked again
@@ -202,6 +206,9 @@ impl<L> BoxedLockCollection<L> {
 			boxed.into_inner()
 		}
 	}
+
+	// child_mut is immediate UB because it leads to mutable and immutable
+	// references happening at the same time
 
 	/// Gets an immutable reference to the underlying data
 	#[must_use]

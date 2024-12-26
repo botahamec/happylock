@@ -10,6 +10,9 @@ use crate::lockable::RawLock;
 
 use super::{Mutex, MutexGuard, MutexRef};
 
+// These impls make things slightly easier because now you can use
+// `println!("{guard}")` instead of `println!("{}", *guard)`
+
 impl<T: PartialEq + ?Sized, R: RawMutex> PartialEq for MutexRef<'_, T, R> {
 	fn eq(&self, other: &Self) -> bool {
 		self.deref().eq(&**other)
@@ -36,8 +39,6 @@ impl<T: Hash + ?Sized, R: RawMutex> Hash for MutexRef<'_, T, R> {
 	}
 }
 
-// This makes things slightly easier because now you can use
-// `println!("{guard}")` instead of `println!("{}", *guard)`
 impl<T: Debug + ?Sized, R: RawMutex> Debug for MutexRef<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)

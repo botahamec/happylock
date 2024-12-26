@@ -48,17 +48,22 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		let locks = get_locks(&self.data);
 
 		if locks.is_empty() {
+			// this probably prevents a panic later
 			return;
 		}
 
+		// these will be unlocked in case of a panic
 		let locked = RefCell::new(Vec::with_capacity(locks.len()));
 		handle_unwind(
 			|| unsafe {
 				'outer: loop {
+					// This prevents us from entering a spin loop waiting for
+					// the same lock to be unlocked
 					// safety: we have the thread key
 					locks[first_index].raw_lock();
 					for (i, lock) in locks.iter().enumerate() {
 						if i == first_index {
+							// we've already locked this one
 							continue;
 						}
 
@@ -70,10 +75,12 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 						if lock.raw_try_lock() {
 							locked.borrow_mut().push(*lock)
 						} else {
-							for lock in locks.iter().take(i) {
+							for lock in locked.borrow().iter() {
 								// safety: we already locked all of these
 								lock.raw_unlock();
 							}
+							// these are no longer locked
+							locked.borrow_mut().clear();
 
 							if first_index >= i {
 								// safety: this is already locked and can't be unlocked
@@ -81,6 +88,7 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 								locks[first_index].raw_unlock();
 							}
 
+							// call lock on this to prevent a spin loop
 							first_index = i;
 							continue 'outer;
 						}
@@ -98,9 +106,12 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		let locks = get_locks(&self.data);
 
 		if locks.is_empty() {
+			// this is an interesting case, but it doesn't give us access to
+			// any data, and can't possibly cause a deadlock
 			return true;
 		}
 
+		// these will be unlocked in case of a panic
 		let locked = RefCell::new(Vec::with_capacity(locks.len()));
 		handle_unwind(
 			|| unsafe {
@@ -136,6 +147,7 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		let locks = get_locks(&self.data);
 
 		if locks.is_empty() {
+			// this probably prevents a panic later
 			return;
 		}
 
@@ -153,10 +165,12 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 					if lock.raw_try_read() {
 						locked.borrow_mut().push(*lock);
 					} else {
-						for lock in locks.iter().take(i) {
+						for lock in locked.borrow().iter() {
 							// safety: we already locked all of these
 							lock.raw_unlock_read();
 						}
+						// these are no longer locked
+						locked.borrow_mut().clear();
 
 						if first_index >= i {
 							// safety: this is already locked and can't be unlocked
@@ -164,6 +178,7 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 							locks[first_index].raw_unlock_read();
 						}
 
+						// don't go into a spin loop, wait for this one to lock
 						first_index = i;
 						continue 'outer;
 					}
@@ -180,6 +195,8 @@ unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
 		let locks = get_locks(&self.data);
 
 		if locks.is_empty() {
+			// this is an interesting case, but it doesn't give us access to
+			// any data, and can't possibly cause a deadlock
 			return true;
 		}
 
@@ -229,6 +246,19 @@ unsafe impl<L: Lockable> Lockable for RetryingLockCollection<L> {
 	}
 }
 
+unsafe impl<L: Sharable> Sharable for RetryingLockCollection<L> {
+	type ReadGuard<'g>
+		= L::ReadGuard<'g>
+	where
+		Self: 'g;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		self.data.read_guard()
+	}
+}
+
+unsafe impl<L: OwnedLockable> OwnedLockable for RetryingLockCollection<L> {}
+
 impl<L: LockableGetMut> LockableGetMut for RetryingLockCollection<L> {
 	type Inner<'a>
 		= L::Inner<'a>
@@ -247,19 +277,6 @@ impl<L: LockableIntoInner> LockableIntoInner for RetryingLockCollection<L> {
 		self.data.into_inner()
 	}
 }
-
-unsafe impl<L: Sharable> Sharable for RetryingLockCollection<L> {
-	type ReadGuard<'g>
-		= L::ReadGuard<'g>
-	where
-		Self: 'g;
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		self.data.read_guard()
-	}
-}
-
-unsafe impl<L: OwnedLockable> OwnedLockable for RetryingLockCollection<L> {}
 
 impl<L> IntoIterator for RetryingLockCollection<L>
 where

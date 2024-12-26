@@ -128,11 +128,9 @@ impl<E: OwnedLockable + Extend<L>, L: OwnedLockable> Extend<L> for OwnedLockColl
 	}
 }
 
-impl<T, L: AsRef<T>> AsRef<T> for OwnedLockCollection<L> {
-	fn as_ref(&self) -> &T {
-		self.data.as_ref()
-	}
-}
+// AsRef can't be implemented because an impl of AsRef<L> for L could break the
+// invariant that there is only one way to lock the collection. AsMut is fine,
+// because the collection can't be locked as long as the reference is valid.
 
 impl<T, L: AsMut<T>> AsMut<T> for OwnedLockCollection<L> {
 	fn as_mut(&mut self) -> &mut T {
@@ -415,6 +413,10 @@ impl<L> OwnedLockCollection<L> {
 	#[must_use]
 	pub fn into_child(self) -> L {
 		self.data
+	}
+
+	pub fn child_mut(&mut self) -> &mut L {
+		&mut self.data
 	}
 }
 

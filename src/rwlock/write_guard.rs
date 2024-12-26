@@ -10,6 +10,9 @@ use crate::lockable::RawLock;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef};
 
+// These impls make things slightly easier because now you can use
+// `println!("{guard}")` instead of `println!("{}", *guard)`
+
 impl<T: PartialEq + ?Sized, R: RawRwLock> PartialEq for RwLockWriteRef<'_, T, R> {
 	fn eq(&self, other: &Self) -> bool {
 		self.deref().eq(&**other)

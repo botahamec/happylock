@@ -165,8 +165,7 @@ impl<T, R: RawMutex> From<T> for Mutex<T, R> {
 }
 
 // We don't need a `get_mut` because we don't have mutex poisoning. Hurray!
-// This is safe because you can't have a mutable reference to the lock if it's
-// locked. Being locked requires an immutable reference because of the guard.
+// We have it anyway for documentation
 impl<T: ?Sized, R> AsMut<T> for Mutex<T, R> {
 	fn as_mut(&mut self) -> &mut T {
 		self.get_mut()
