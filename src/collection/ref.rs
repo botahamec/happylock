@@ -151,6 +151,25 @@ impl<'a, L: OwnedLockable> RefLockCollection<'a, L> {
 }
 
 impl<L> RefLockCollection<'_, L> {
+	/// Gets an immutable reference to the underlying data
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RefLockCollection;
+	///
+	/// let data1 = Mutex::new(42);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let data = (&data1, &data2);
+	/// let lock = RefLockCollection::try_new(&data).unwrap();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let guard = lock.child().0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
 	#[must_use]
 	pub const fn child(&self) -> &L {
 		self.data
@@ -255,9 +274,14 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 
 	/// Attempts to lock the without blocking.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data, and unlocks the data when it is dropped. Otherwise, `None` is
-	/// returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// locks when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any of the locks in the collection are already locked, then an error
+	/// is returned containing the given key.
 	///
 	/// # Examples
 	///
@@ -364,9 +388,14 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 	/// Attempts to lock the without blocking, in such a way that other threads
 	/// can still read from the collection.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data immutably, and unlocks the data when it is dropped. Otherwise,
-	/// `None` is returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// shared access when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any of the locks in the collection are already locked, then an error
+	/// is returned containing the given key.
 	///
 	/// # Examples
 	///

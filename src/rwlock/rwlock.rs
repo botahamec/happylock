@@ -277,9 +277,18 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// Attempts to acquire this `RwLock` with shared read access without
 	/// blocking.
 	///
-	/// If the access could not be granted at this time, then `None` is
+	/// If the access could not be granted at this time, then `Err` is
 	/// returned. Otherwise, an RAII guard is returned which will release the
 	/// shared access when it is dropped.
+	///
+	/// This function does not provide any guarantees with respect to the
+	/// ordering of whether contentious readers or writers will acquire the
+	/// lock first.
+	///
+	/// # Errors
+	///
+	/// If the `RwLock` could not be acquired because it was already locked
+	/// exclusively, then an error will be returned containing the given key.
 	///
 	/// # Examples
 	///
@@ -351,8 +360,10 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// let lock = RwLock::new(1);
 	///
-	/// let mut n = lock.write(key);
-	/// *n += 2;
+	/// match lock.try_write(key) {
+	///     Ok(n) => assert_eq!(*n, 1),
+	///     Err(_) => unreachable!(),
+	/// };
 	/// ```
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
@@ -377,6 +388,11 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// This function does not provide any guarantees with respect to the
 	/// ordering of whether contentious readers or writers will acquire the
 	/// lock first.
+	///
+	/// # Errors
+	///
+	/// If the `RwLock` could not be acquired because it was already locked,
+	/// then an error will be returned containing the given key.
 	///
 	/// # Examples
 	///

@@ -560,7 +560,7 @@ impl<L: LockableIntoInner> Poisonable<L> {
 impl<L: LockableGetMut + RawLock> Poisonable<L> {
 	/// Returns a mutable reference to the underlying data.
 	///
-	/// Since this call borrows the `Poisonable` mutable, no actual locking
+	/// Since this call borrows the `Poisonable` mutably, no actual locking
 	/// needs to take place - the mutable borrow statically guarantees no locks
 	/// exist.
 	///

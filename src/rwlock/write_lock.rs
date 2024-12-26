@@ -81,6 +81,31 @@ impl<'l, T, R> WriteLock<'l, T, R> {
 impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	/// Locks the underlying [`RwLock`] with exclusive write access, blocking
 	/// the current until it can be acquired.
+	///
+	/// This function will not return while other writers or readers currently
+	/// have access to the lock.
+	///
+	/// Returns an RAII guard which will drop the write access of this `RwLock`
+	/// when dropped.
+	///
+	/// Because this method takes a [`ThreadKey`], it's not possible for this
+	/// method to cause a deadlock.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{ThreadKey, RwLock};
+	/// use happylock::rwlock::WriteLock;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = RwLock::new(1);
+	/// let writer = WriteLock::new(&lock);
+	///
+	/// let mut n = writer.lock(key);
+	/// *n += 2;
+	/// ```
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
@@ -89,6 +114,35 @@ impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	}
 
 	/// Attempts to lock the underlying [`RwLock`] with exclusive write access.
+	///
+	/// This function does not block. If the lock could not be acquired at this
+	/// time, then `None` is returned. Otherwise, an RAII guard is returned
+	/// which will release the lock when it is dropped.
+	///
+	/// This function does not provide any guarantees with respect to the
+	/// ordering of whether contentious readers or writers will acquire the
+	/// lock first.
+	///
+	/// # Errors
+	///
+	/// If the [`RwLock`] could not be acquired because it was already locked,
+	/// then an error will be returned containing the given key.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::rwlock::WriteLock;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = RwLock::new(1);
+	/// let writer = WriteLock::new(&lock);
+	///
+	/// match writer.try_lock(key) {
+	///     Ok(n) => assert_eq!(*n, 1),
+	///     Err(_) => unreachable!(),
+	/// };
+	/// ```
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
@@ -100,7 +154,26 @@ impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	// the referenced `RwLock`.
 
 	/// Immediately drops the guard, and consequently releases the exclusive
-	/// lock.
+	/// lock on the underlying [`RwLock`].
+	///
+	/// This function is equivalent to calling [`drop`] on the guard, except
+	/// that it returns the key that was used to create it. Alternately, the
+	/// guard will be automatically dropped when it goes out of scope.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::rwlock::WriteLock;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = RwLock::new(0);
+	/// let writer = WriteLock::new(&lock);
+	///
+	/// let mut guard = writer.lock(key);
+	/// *guard += 20;
+	/// let key = WriteLock::unlock(guard);
+	/// ```
 	pub fn unlock<'key, Key: Keyable + 'key>(guard: RwLockWriteGuard<'_, 'key, T, Key, R>) -> Key {
 		RwLock::unlock_write(guard)
 	}

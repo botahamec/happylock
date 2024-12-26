@@ -422,10 +422,44 @@ impl<L> RetryingLockCollection<L> {
 		Self { data }
 	}
 
+	/// Gets an immutable reference to the underlying collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RetryingLockCollection;
+	///
+	/// let data = (Mutex::new(42), Mutex::new(""));
+	/// let lock = RetryingLockCollection::new(data);
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let inner = lock.child();
+	/// let guard = inner.0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
 	pub const fn child(&self) -> &L {
 		&self.data
 	}
 
+	/// Gets a mutable reference to the underlying collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::RetryingLockCollection;
+	///
+	/// let data = (Mutex::new(42), Mutex::new(""));
+	/// let mut lock = RetryingLockCollection::new(data);
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let mut inner = lock.child_mut();
+	/// let guard = inner.0.get_mut();
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
 	pub fn child_mut(&mut self) -> &mut L {
 		&mut self.data
 	}
@@ -515,9 +549,14 @@ impl<L: Lockable> RetryingLockCollection<L> {
 
 	/// Attempts to lock the without blocking.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data, and unlocks the data when it is dropped. Otherwise, `None` is
-	/// returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// locks when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any of the locks in the collection are already locked, then an error
+	/// is returned containing the given key.
 	///
 	/// # Examples
 	///
@@ -622,9 +661,14 @@ impl<L: Sharable> RetryingLockCollection<L> {
 	/// Attempts to lock the without blocking, in such a way that other threads
 	/// can still read from the collection.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data immutably, and unlocks the data when it is dropped. Otherwise,
-	/// `None` is returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// shared access when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If shared access cannot be acquired at this time, then an error is
+	/// returned containing the given key.
 	///
 	/// # Examples
 	///
@@ -685,12 +729,39 @@ impl<L: Sharable> RetryingLockCollection<L> {
 }
 
 impl<L: LockableGetMut> RetryingLockCollection<L> {
+	/// Gets a mutable reference to the data behind this
+	/// `RetryingLockCollection`.
+	///
+	/// Since this call borrows the `RetryingLockCollection` mutably, no actual
+	/// locking needs to take place - the mutable borrow statically guarantees
+	/// no locks exist.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	/// use happylock::collection::RetryingLockCollection;
+	///
+	/// let mut mutex = RetryingLockCollection::new([Mutex::new(0), Mutex::new(0)]);
+	/// assert_eq!(mutex.get_mut(), [&mut 0, &mut 0]);
+	/// ```
 	pub fn get_mut(&mut self) -> L::Inner<'_> {
 		LockableGetMut::get_mut(self)
 	}
 }
 
 impl<L: LockableIntoInner> RetryingLockCollection<L> {
+	/// Consumes this `RetryingLockCollection`, returning the underlying data.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	/// use happylock::collection::RetryingLockCollection;
+	///
+	/// let mutex = RetryingLockCollection::new([Mutex::new(0), Mutex::new(0)]);
+	/// assert_eq!(mutex.into_inner(), [0, 0]);
+	/// ```
 	pub fn into_inner(self) -> L::Inner {
 		LockableIntoInner::into_inner(self)
 	}

@@ -247,9 +247,14 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 
 	/// Attempts to lock the `Mutex` without blocking.
 	///
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// lock when it is dropped.
+	///
 	/// # Errors
 	///
-	/// Returns [`Err`] if the `Mutex` cannot be locked without blocking.
+	/// If the mutex could not be acquired because it is already locked, then
+	/// this call will return an error containing the given key.
 	///
 	/// # Examples
 	///

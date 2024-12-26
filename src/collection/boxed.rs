@@ -211,6 +211,23 @@ impl<L> BoxedLockCollection<L> {
 	// references happening at the same time
 
 	/// Gets an immutable reference to the underlying data
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey, LockCollection};
+	///
+	/// let data1 = Mutex::new(42);
+	/// let data2 = Mutex::new("");
+	///
+	/// // data1 and data2 refer to distinct mutexes, so this won't panic
+	/// let data = (&data1, &data2);
+	/// let lock = LockCollection::try_new(&data).unwrap();
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let guard = lock.child().0.lock(key);
+	/// assert_eq!(*guard, 42);
+	/// ```
 	#[must_use]
 	pub fn child(&self) -> &L {
 		unsafe {
@@ -375,9 +392,14 @@ impl<L: Lockable> BoxedLockCollection<L> {
 
 	/// Attempts to lock the without blocking.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data, and unlocks the data when it is dropped. Otherwise, `None` is
-	/// returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// locks when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any locks in the collection are already locked, then an error
+	/// containing the given key is returned.
 	///
 	/// # Examples
 	///
@@ -480,9 +502,14 @@ impl<L: Sharable> BoxedLockCollection<L> {
 	/// Attempts to lock the without blocking, in such a way that other threads
 	/// can still read from the collection.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data immutably, and unlocks the data when it is dropped. Otherwise,
-	/// `None` is returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// shared access when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any of the locks in the collection are already locked, then an error
+	/// is returned containing the given key.
 	///
 	/// # Examples
 	///
@@ -494,29 +521,29 @@ impl<L: Sharable> BoxedLockCollection<L> {
 	/// let lock = LockCollection::new(data);
 	///
 	/// match lock.try_read(key) {
-	///     Some(mut guard) => {
+	///     Ok(mut guard) => {
 	///         assert_eq!(*guard.0, 5);
 	///         assert_eq!(*guard.1, "6");
 	///     },
-	///     None => unreachable!(),
+	///     Err(_) => unreachable!(),
 	/// };
 	///
 	/// ```
 	pub fn try_read<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
-	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>> {
+	) -> Result<LockGuard<'key, L::ReadGuard<'g>, Key>, Key> {
 		let guard = unsafe {
 			// safety: we have the thread key
 			if !self.raw_try_read() {
-				return None;
+				return Err(key);
 			}
 
 			// safety: we've acquired the locks
 			self.child().read_guard()
 		};
 
-		Some(LockGuard {
+		Ok(LockGuard {
 			guard,
 			key,
 			_phantom: PhantomData,
@@ -543,6 +570,23 @@ impl<L: Sharable> BoxedLockCollection<L> {
 	) -> Key {
 		drop(guard.guard);
 		guard.key
+	}
+}
+
+impl<L: LockableIntoInner> BoxedLockCollection<L> {
+	/// Consumes this `BoxedLockCollection`, returning the underlying data.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	///
+	/// let mutex = LockCollection::new([Mutex::new(0), Mutex::new(0)]);
+	/// assert_eq!(mutex.into_inner(), [0, 0]);
+	/// ```
+	#[must_use]
+	pub fn into_inner(self) -> <Self as LockableIntoInner>::Inner {
+		LockableIntoInner::into_inner(self)
 	}
 }
 

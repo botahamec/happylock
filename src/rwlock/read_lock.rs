@@ -87,6 +87,34 @@ impl<'l, T, R> ReadLock<'l, T, R> {
 impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	/// Locks the underlying [`RwLock`] with shared read access, blocking the
 	/// current thread until it can be acquired.
+	///
+	/// The calling thread will be blocked until there are no more writers
+	/// which hold the lock. There may be other readers currently inside the
+	/// lock when this method returns.
+	///
+	/// Returns an RAII guard which will release this thread's shared access
+	/// once it is dropped.
+	///
+	/// Because this method takes a [`ThreadKey`], it's not possible for this
+	/// method to cause a deadlock.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use std::sync::Arc;
+	/// use std::thread;
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::rwlock::ReadLock;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock: &'static mut RwLock<_> = Box::leak(Box::new(RwLock::new(1)));
+	/// let reader = ReadLock::new(&lock);
+	///
+	/// let n = reader.lock(key);
+	/// assert_eq!(*n, 1);
+	/// ```
+	///
+	/// [`ThreadKey`]: `crate::ThreadKey`
 	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
@@ -96,6 +124,35 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 
 	/// Attempts to acquire the underlying [`RwLock`] with shared read access
 	/// without blocking.
+	///
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// shared access when it is dropped.
+	///
+	/// This function does not provide any guarantees with respect to the
+	/// ordering of whether contentious readers or writers will acquire the
+	/// lock first.
+	///
+	/// # Errors
+	///
+	/// If the `RwLock` could not be acquired because it was already locked
+	/// exclusively, then an error will be returned containing the given key.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::rwlock::ReadLock;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = RwLock::new(1);
+	/// let reader = ReadLock::new(&lock);
+	///
+	/// match reader.try_lock(key) {
+	///     Ok(n) => assert_eq!(*n, 1),
+	///     Err(_) => unreachable!(),
+	/// };
+	/// ```
 	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
 		&'s self,
 		key: Key,
@@ -111,6 +168,25 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 
 	/// Immediately drops the guard, and consequently releases the shared lock
 	/// on the underlying [`RwLock`].
+	///
+	/// This function is equivalent to calling [`drop`] on the guard, except
+	/// that it returns the key that was used to create it. Alternately, the
+	/// guard will be automatically dropped when it goes out of scope.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{RwLock, ThreadKey};
+	/// use happylock::rwlock::ReadLock;
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let lock = RwLock::new(0);
+	/// let reader = ReadLock::new(&lock);
+	///
+	/// let mut guard = reader.lock(key);
+	/// assert_eq!(*guard, 0);
+	/// let key = ReadLock::unlock(guard);
+	/// ```
 	pub fn unlock<'key, Key: Keyable + 'key>(guard: RwLockReadGuard<'_, 'key, T, Key, R>) -> Key {
 		RwLock::unlock_read(guard)
 	}

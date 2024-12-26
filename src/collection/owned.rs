@@ -213,9 +213,14 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 
 	/// Attempts to lock the without blocking.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data, and unlocks the data when it is dropped. Otherwise, `None` is
-	/// returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// locks when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any of the locks in this collection are already locked, this returns
+	/// an error containing the given key.
 	///
 	/// # Examples
 	///
@@ -324,9 +329,14 @@ impl<L: Sharable> OwnedLockCollection<L> {
 	/// Attempts to lock the without blocking, in such a way that other threads
 	/// can still read from the collection.
 	///
-	/// If successful, this method returns a guard that can be used to access
-	/// the data immutably, and unlocks the data when it is dropped. Otherwise,
-	/// `None` is returned.
+	/// If the access could not be granted at this time, then `Err` is
+	/// returned. Otherwise, an RAII guard is returned which will release the
+	/// shared access when it is dropped.
+	///
+	/// # Errors
+	///
+	/// If any of the locks in this collection can't be acquired, then an error
+	/// is returned containing the given key.
 	///
 	/// # Examples
 	///
@@ -415,18 +425,62 @@ impl<L> OwnedLockCollection<L> {
 		self.data
 	}
 
+	/// Gets a mutable reference to the underlying collection.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, ThreadKey};
+	/// use happylock::collection::OwnedLockCollection;
+	///
+	/// let data = (Mutex::new(42), Mutex::new(""));
+	/// let mut lock = OwnedLockCollection::new(data);
+	///
+	/// let key = ThreadKey::get().unwrap();
+	/// let mut inner = lock.child_mut();
+	/// let guard = inner.0.get_mut();
+	/// assert_eq!(*guard, 42);
+	/// ```
+	#[must_use]
 	pub fn child_mut(&mut self) -> &mut L {
 		&mut self.data
 	}
 }
 
 impl<L: LockableGetMut> OwnedLockCollection<L> {
+	/// Gets a mutable reference to the data behind this `OwnedLockCollection`.
+	///
+	/// Since this call borrows the `OwnedLockCollection` mutably, no actual
+	/// locking needs to take place - the mutable borrow statically guarantees
+	/// no locks exist.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	/// use happylock::collection::OwnedLockCollection;
+	///
+	/// let mut mutex = OwnedLockCollection::new([Mutex::new(0), Mutex::new(0)]);
+	/// assert_eq!(mutex.get_mut(), [&mut 0, &mut 0]);
+	/// ```
 	pub fn get_mut(&mut self) -> L::Inner<'_> {
 		LockableGetMut::get_mut(self)
 	}
 }
 
 impl<L: LockableIntoInner> OwnedLockCollection<L> {
+	/// Consumes this `OwnedLockCollection`, returning the underlying data.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use happylock::{Mutex, LockCollection};
+	/// use happylock::collection::OwnedLockCollection;
+	///
+	/// let mutex = OwnedLockCollection::new([Mutex::new(0), Mutex::new(0)]);
+	/// assert_eq!(mutex.into_inner(), [0, 0]);
+	/// ```
+	#[must_use]
 	pub fn into_inner(self) -> L::Inner {
 		LockableIntoInner::into_inner(self)
 	}
