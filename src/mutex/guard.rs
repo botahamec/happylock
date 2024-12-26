@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -9,9 +10,34 @@ use crate::lockable::RawLock;
 
 use super::{Mutex, MutexGuard, MutexRef};
 
+impl<T: PartialEq + ?Sized, R: RawMutex> PartialEq for MutexRef<'_, T, R> {
+	fn eq(&self, other: &Self) -> bool {
+		self.deref().eq(&**other)
+	}
+}
+
+impl<T: Eq + ?Sized, R: RawMutex> Eq for MutexRef<'_, T, R> {}
+
+impl<T: PartialOrd + ?Sized, R: RawMutex> PartialOrd for MutexRef<'_, T, R> {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.deref().partial_cmp(&**other)
+	}
+}
+
+impl<T: Ord + ?Sized, R: RawMutex> Ord for MutexRef<'_, T, R> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.deref().cmp(&**other)
+	}
+}
+
+impl<T: Hash + ?Sized, R: RawMutex> Hash for MutexRef<'_, T, R> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.deref().hash(state)
+	}
+}
+
 // This makes things slightly easier because now you can use
-// `println!("{guard}")` instead of `println!("{}", *guard)`. I wonder if I
-// should implement some other standard library traits like this too?
+// `println!("{guard}")` instead of `println!("{}", *guard)`
 impl<'a, T: Debug + ?Sized + 'a, R: RawMutex> Debug for MutexRef<'a, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
@@ -75,6 +101,34 @@ impl<'a, T: ?Sized + 'a, R: RawMutex> MutexRef<'a, T, R> {
 
 // it's kinda annoying to re-implement some of this stuff on guards
 // there's nothing i can do about that
+
+impl<T: PartialEq + ?Sized, R: RawMutex, Key: Keyable> PartialEq for MutexGuard<'_, '_, T, Key, R> {
+	fn eq(&self, other: &Self) -> bool {
+		self.deref().eq(&**other)
+	}
+}
+
+impl<T: Eq + ?Sized, R: RawMutex, Key: Keyable> Eq for MutexGuard<'_, '_, T, Key, R> {}
+
+impl<T: PartialOrd + ?Sized, R: RawMutex, Key: Keyable> PartialOrd
+	for MutexGuard<'_, '_, T, Key, R>
+{
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.deref().partial_cmp(&**other)
+	}
+}
+
+impl<T: Ord + ?Sized, R: RawMutex, Key: Keyable> Ord for MutexGuard<'_, '_, T, Key, R> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.deref().cmp(&**other)
+	}
+}
+
+impl<T: Hash + ?Sized, R: RawMutex, Key: Keyable> Hash for MutexGuard<'_, '_, T, Key, R> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.deref().hash(state)
+	}
+}
 
 impl<'a, 'key, T: Debug + ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> Debug
 	for MutexGuard<'a, 'key, T, Key, R>

@@ -1,13 +1,13 @@
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::marker::PhantomData;
+
 use crate::collection::utils;
 use crate::handle_unwind::handle_unwind;
 use crate::lockable::{
 	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
 use crate::Keyable;
-
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::marker::PhantomData;
 
 use super::{LockGuard, RetryingLockCollection};
 

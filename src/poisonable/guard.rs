@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -24,6 +25,32 @@ impl<Guard> Drop for PoisonRef<'_, Guard> {
 		if std::thread::panicking() {
 			self.flag.poison();
 		}
+	}
+}
+
+impl<Guard: PartialEq> PartialEq for PoisonRef<'_, Guard> {
+	fn eq(&self, other: &Self) -> bool {
+		self.guard.eq(&other.guard)
+	}
+}
+
+impl<Guard: PartialOrd> PartialOrd for PoisonRef<'_, Guard> {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.guard.partial_cmp(&other.guard)
+	}
+}
+
+impl<Guard: Eq> Eq for PoisonRef<'_, Guard> {}
+
+impl<Guard: Ord> Ord for PoisonRef<'_, Guard> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.guard.cmp(&other.guard)
+	}
+}
+
+impl<Guard: Hash> Hash for PoisonRef<'_, Guard> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.guard.hash(state)
 	}
 }
 
@@ -62,6 +89,32 @@ impl<Guard> AsRef<Guard> for PoisonRef<'_, Guard> {
 impl<Guard> AsMut<Guard> for PoisonRef<'_, Guard> {
 	fn as_mut(&mut self) -> &mut Guard {
 		&mut self.guard
+	}
+}
+
+impl<Guard: PartialEq, Key: Keyable> PartialEq for PoisonGuard<'_, '_, Guard, Key> {
+	fn eq(&self, other: &Self) -> bool {
+		self.guard.eq(&other.guard)
+	}
+}
+
+impl<Guard: PartialOrd, Key: Keyable> PartialOrd for PoisonGuard<'_, '_, Guard, Key> {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.guard.partial_cmp(&other.guard)
+	}
+}
+
+impl<Guard: Eq, Key: Keyable> Eq for PoisonGuard<'_, '_, Guard, Key> {}
+
+impl<Guard: Ord, Key: Keyable> Ord for PoisonGuard<'_, '_, Guard, Key> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.guard.cmp(&other.guard)
+	}
+}
+
+impl<Guard: Hash, Key: Keyable> Hash for PoisonGuard<'_, '_, Guard, Key> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.guard.hash(state)
 	}
 }
 

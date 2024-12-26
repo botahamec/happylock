@@ -3,7 +3,7 @@ name = "happylock"
 version = "0.3.0"
 authors = ["Mica White <botahamec@outlook.com>"]
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.82"
 description = "Free deadlock prevention"
 documentation = "https://docs.rs/happylock"
 readme = "README.md"
@@ -11,6 +11,7 @@ repository = "https://github.com/botahamec/happylock/"
 license = "CC0-1.0"
 keywords = ["deadlock", "mutex", "rwlock"]
 categories = ["concurrency"]
+include = ["src/**/*", "LICENSE", "README.md"]
 
 [dependencies]
 lock_api = "0.4"

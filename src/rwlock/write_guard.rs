@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -8,6 +9,32 @@ use crate::key::Keyable;
 use crate::lockable::RawLock;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef};
+
+impl<T: PartialEq + ?Sized, R: RawRwLock> PartialEq for RwLockWriteRef<'_, T, R> {
+	fn eq(&self, other: &Self) -> bool {
+		self.deref().eq(&**other)
+	}
+}
+
+impl<T: Eq + ?Sized, R: RawRwLock> Eq for RwLockWriteRef<'_, T, R> {}
+
+impl<T: PartialOrd + ?Sized, R: RawRwLock> PartialOrd for RwLockWriteRef<'_, T, R> {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.deref().partial_cmp(&**other)
+	}
+}
+
+impl<T: Ord + ?Sized, R: RawRwLock> Ord for RwLockWriteRef<'_, T, R> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.deref().cmp(&**other)
+	}
+}
+
+impl<T: Hash + ?Sized, R: RawRwLock> Hash for RwLockWriteRef<'_, T, R> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.deref().hash(state)
+	}
+}
 
 impl<'a, T: Debug + ?Sized + 'a, R: RawRwLock> Debug for RwLockWriteRef<'a, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -67,6 +94,36 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> RwLockWriteRef<'a, T, R> {
 	#[must_use]
 	pub(crate) unsafe fn new(mutex: &'a RwLock<T, R>) -> Self {
 		Self(mutex, PhantomData)
+	}
+}
+
+impl<T: PartialEq + ?Sized, R: RawRwLock, Key: Keyable> PartialEq
+	for RwLockWriteGuard<'_, '_, T, Key, R>
+{
+	fn eq(&self, other: &Self) -> bool {
+		self.deref().eq(&**other)
+	}
+}
+
+impl<T: Eq + ?Sized, R: RawRwLock, Key: Keyable> Eq for RwLockWriteGuard<'_, '_, T, Key, R> {}
+
+impl<T: PartialOrd + ?Sized, R: RawRwLock, Key: Keyable> PartialOrd
+	for RwLockWriteGuard<'_, '_, T, Key, R>
+{
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.deref().partial_cmp(&**other)
+	}
+}
+
+impl<T: Ord + ?Sized, R: RawRwLock, Key: Keyable> Ord for RwLockWriteGuard<'_, '_, T, Key, R> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.deref().cmp(&**other)
+	}
+}
+
+impl<T: Hash + ?Sized, R: RawRwLock, Key: Keyable> Hash for RwLockWriteGuard<'_, '_, T, Key, R> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.deref().hash(state)
 	}
 }
 

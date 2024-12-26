@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 
+use crate::Keyable;
+
 mod error;
 mod flag;
 mod guard;

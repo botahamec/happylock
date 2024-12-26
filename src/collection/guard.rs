@@ -1,9 +1,36 @@
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
 use crate::key::Keyable;
 
 use super::LockGuard;
+
+impl<Guard: PartialEq, Key: Keyable> PartialEq for LockGuard<'_, Guard, Key> {
+	fn eq(&self, other: &Self) -> bool {
+		self.guard.eq(&other.guard)
+	}
+}
+
+impl<Guard: PartialOrd, Key: Keyable> PartialOrd for LockGuard<'_, Guard, Key> {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.guard.partial_cmp(&other.guard)
+	}
+}
+
+impl<Guard: Eq, Key: Keyable> Eq for LockGuard<'_, Guard, Key> {}
+
+impl<Guard: Ord, Key: Keyable> Ord for LockGuard<'_, Guard, Key> {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.guard.cmp(&other.guard)
+	}
+}
+
+impl<Guard: Hash, Key: Keyable> Hash for LockGuard<'_, Guard, Key> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.guard.hash(state)
+	}
+}
 
 impl<Guard: Debug, Key: Keyable> Debug for LockGuard<'_, Guard, Key> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

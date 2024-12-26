@@ -1,4 +1,3 @@
-use std::alloc::Layout;
 use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
