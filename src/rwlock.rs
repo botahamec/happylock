@@ -95,7 +95,7 @@ pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
 ///
 /// [`read`]: `RwLock::read`
 /// [`try_read`]: `RwLock::try_read`
-pub struct RwLockReadGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
+pub struct RwLockReadGuard<'a, 'key: 'a, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
 	rwlock: RwLockReadRef<'a, T, R>,
 	thread_key: Key,
 	_phantom: PhantomData<&'key ()>,
@@ -108,7 +108,7 @@ pub struct RwLockReadGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLoc
 /// [`RwLock`]
 ///
 /// [`try_write`]: `RwLock::try_write`
-pub struct RwLockWriteGuard<'a, 'key, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
+pub struct RwLockWriteGuard<'a, 'key: 'a, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
 	rwlock: RwLockWriteRef<'a, T, R>,
 	thread_key: Key,
 	_phantom: PhantomData<&'key ()>,

@@ -36,19 +36,19 @@ impl<T: Hash + ?Sized, R: RawRwLock> Hash for RwLockWriteRef<'_, T, R> {
 	}
 }
 
-impl<'a, T: Debug + ?Sized + 'a, R: RawRwLock> Debug for RwLockWriteRef<'a, T, R> {
+impl<T: Debug + ?Sized, R: RawRwLock> Debug for RwLockWriteRef<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
 	}
 }
 
-impl<'a, T: Display + ?Sized + 'a, R: RawRwLock> Display for RwLockWriteRef<'a, T, R> {
+impl<T: Display + ?Sized, R: RawRwLock> Display for RwLockWriteRef<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Display::fmt(&**self, f)
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawRwLock> Deref for RwLockWriteRef<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> Deref for RwLockWriteRef<'_, T, R> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -59,7 +59,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> Deref for RwLockWriteRef<'a, T, R> {
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawRwLock> DerefMut for RwLockWriteRef<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> DerefMut for RwLockWriteRef<'_, T, R> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		// safety: this is the only type that can use `value`, and we have a
 		//         mutable reference to this type, so there cannot be any other
@@ -68,19 +68,19 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> DerefMut for RwLockWriteRef<'a, T, R> {
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawRwLock> AsRef<T> for RwLockWriteRef<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> AsRef<T> for RwLockWriteRef<'_, T, R> {
 	fn as_ref(&self) -> &T {
 		self
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawRwLock> AsMut<T> for RwLockWriteRef<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> AsMut<T> for RwLockWriteRef<'_, T, R> {
 	fn as_mut(&mut self) -> &mut T {
 		self
 	}
 }
 
-impl<'a, T: ?Sized + 'a, R: RawRwLock> Drop for RwLockWriteRef<'a, T, R> {
+impl<T: ?Sized, R: RawRwLock> Drop for RwLockWriteRef<'_, T, R> {
 	fn drop(&mut self) {
 		// safety: this guard is being destroyed, so the data cannot be
 		//         accessed without locking again
@@ -127,25 +127,21 @@ impl<T: Hash + ?Sized, R: RawRwLock, Key: Keyable> Hash for RwLockWriteGuard<'_,
 	}
 }
 
-impl<'a, 'key, T: Debug + ?Sized + 'a, Key: Keyable + 'key, R: RawRwLock> Debug
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
-{
+impl<T: Debug + ?Sized, Key: Keyable, R: RawRwLock> Debug for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
 	}
 }
 
-impl<'a, 'key, T: Display + ?Sized + 'a, Key: Keyable + 'key, R: RawRwLock> Display
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
+impl<T: Display + ?Sized, Key: Keyable, R: RawRwLock> Display
+	for RwLockWriteGuard<'_, '_, T, Key, R>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Display::fmt(&**self, f)
 	}
 }
 
-impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> Deref
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
-{
+impl<T: ?Sized, Key: Keyable, R: RawRwLock> Deref for RwLockWriteGuard<'_, '_, T, Key, R> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -153,33 +149,25 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> Deref
 	}
 }
 
-impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> DerefMut
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
-{
+impl<T: ?Sized, Key: Keyable, R: RawRwLock> DerefMut for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.rwlock
 	}
 }
 
-impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> AsRef<T>
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
-{
+impl<T: ?Sized, Key: Keyable, R: RawRwLock> AsRef<T> for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn as_ref(&self) -> &T {
 		self
 	}
 }
 
-impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> AsMut<T>
-	for RwLockWriteGuard<'a, 'key, T, Key, R>
-{
+impl<T: ?Sized, Key: Keyable, R: RawRwLock> AsMut<T> for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn as_mut(&mut self) -> &mut T {
 		self
 	}
 }
 
-impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
-	RwLockWriteGuard<'a, 'key, T, Key, R>
-{
+impl<'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock> RwLockWriteGuard<'a, '_, T, Key, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
 	#[must_use]
@@ -192,4 +180,4 @@ impl<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable, R: RawRwLock>
 	}
 }
 
-unsafe impl<'a, T: ?Sized + Sync + 'a, R: RawRwLock + Sync + 'a> Sync for RwLockWriteRef<'a, T, R> {}
+unsafe impl<T: ?Sized + Sync, R: RawRwLock + Sync> Sync for RwLockWriteRef<'_, T, R> {}
