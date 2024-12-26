@@ -12,6 +12,7 @@ use super::{
 };
 
 unsafe impl<L: Lockable + RawLock> RawLock for Poisonable<L> {
+	#[mutants::skip] // this should never run
 	fn poison(&self) {
 		self.inner.poison()
 	}

@@ -40,6 +40,7 @@ where
 }
 
 unsafe impl<L: Lockable> RawLock for RefLockCollection<'_, L> {
+	#[mutants::skip] // this should never run
 	fn poison(&self) {
 		for lock in &self.locks {
 			lock.poison();

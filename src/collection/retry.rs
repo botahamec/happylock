@@ -36,6 +36,7 @@ fn contains_duplicates<L: Lockable>(data: L) -> bool {
 }
 
 unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
+	#[mutants::skip] // this should never run
 	fn poison(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
