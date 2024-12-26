@@ -96,7 +96,7 @@ pub unsafe fn attempt_to_recover_locks_from_panic(locked: &RefCell<Vec<&dyn RawL
 				locked_lock.raw_unlock();
 			}
 		},
-		|| locked.borrow().iter().for_each(|l| l.kill()),
+		|| locked.borrow().iter().for_each(|l| l.poison()),
 	)
 }
 
@@ -108,6 +108,6 @@ pub unsafe fn attempt_to_recover_reads_from_panic(locked: &RefCell<Vec<&dyn RawL
 				locked_lock.raw_unlock_read();
 			}
 		},
-		|| locked.borrow().iter().for_each(|l| l.kill()),
+		|| locked.borrow().iter().for_each(|l| l.poison()),
 	)
 }

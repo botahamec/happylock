@@ -12,8 +12,8 @@ use super::{
 };
 
 unsafe impl<L: Lockable + RawLock> RawLock for Poisonable<L> {
-	fn kill(&self) {
-		self.inner.kill()
+	fn poison(&self) {
+		self.inner.poison()
 	}
 
 	unsafe fn raw_lock(&self) {

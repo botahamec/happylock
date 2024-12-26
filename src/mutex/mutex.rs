@@ -13,7 +13,7 @@ use crate::poisonable::PoisonFlag;
 use super::{Mutex, MutexGuard, MutexRef};
 
 unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
-	fn kill(&self) {
+	fn poison(&self) {
 		self.poison.poison();
 	}
 
@@ -22,7 +22,7 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.lock(), || self.kill())
+		handle_unwind(|| this.raw.lock(), || self.poison())
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -32,13 +32,13 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.try_lock(), || self.kill())
+		handle_unwind(|| this.raw.try_lock(), || self.poison())
 	}
 
 	unsafe fn raw_unlock(&self) {
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.unlock(), || self.kill())
+		handle_unwind(|| this.raw.unlock(), || self.poison())
 	}
 
 	// this is the closest thing to a read we can get, but Sharable isn't

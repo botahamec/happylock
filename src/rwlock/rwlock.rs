@@ -14,7 +14,7 @@ use crate::lockable::{
 use super::{PoisonFlag, RwLock, RwLockReadGuard, RwLockReadRef, RwLockWriteGuard, RwLockWriteRef};
 
 unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
-	fn kill(&self) {
+	fn poison(&self) {
 		self.poison.poison();
 	}
 
@@ -26,7 +26,7 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.lock_exclusive(), || self.kill())
+		handle_unwind(|| this.raw.lock_exclusive(), || self.poison())
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
@@ -36,13 +36,13 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.try_lock_exclusive(), || self.kill())
+		handle_unwind(|| this.raw.try_lock_exclusive(), || self.poison())
 	}
 
 	unsafe fn raw_unlock(&self) {
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.unlock_exclusive(), || self.kill())
+		handle_unwind(|| this.raw.unlock_exclusive(), || self.poison())
 	}
 
 	unsafe fn raw_read(&self) {
@@ -53,7 +53,7 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.lock_shared(), || self.kill())
+		handle_unwind(|| this.raw.lock_shared(), || self.poison())
 	}
 
 	unsafe fn raw_try_read(&self) -> bool {
@@ -63,13 +63,13 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.try_lock_shared(), || self.kill())
+		handle_unwind(|| this.raw.try_lock_shared(), || self.poison())
 	}
 
 	unsafe fn raw_unlock_read(&self) {
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
-		handle_unwind(|| this.raw.unlock_shared(), || self.kill())
+		handle_unwind(|| this.raw.unlock_shared(), || self.poison())
 	}
 }
 

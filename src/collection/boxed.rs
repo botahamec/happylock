@@ -21,9 +21,9 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 }
 
 unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
-	fn kill(&self) {
+	fn poison(&self) {
 		for lock in &self.locks {
-			lock.kill();
+			lock.poison();
 		}
 	}
 
@@ -196,6 +196,8 @@ impl<L> BoxedLockCollection<L> {
 			self.locks.clear();
 			// safety: this was allocated using a box, and is now unique
 			let boxed: Box<UnsafeCell<L>> = Box::from_raw(self.data.cast_mut());
+			// to prevent a double free
+			std::mem::forget(self);
 
 			boxed.into_inner()
 		}

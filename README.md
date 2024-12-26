@@ -123,15 +123,19 @@ println!("{}", data[1]);
 
 ## Future Work
 
-Are the ergonomics here any good? This is completely uncharted territory. Maybe there are some useful helper methods we don't have here yet. Maybe `try_lock` should return a `Result`. Maybe `lock_api` or `spin` implements some useful methods that I kept out for this proof of concept. Maybe there are some lock-specific methods that could be added to `LockCollection`. More types might be lockable using a lock collection.
+I want to have another go at `RefLockCollection` and `BoxedLockCollection`. I understand pinning better now than I did when I first wrote this, so I might be able to coalesce them now. `Pin` is not a very good API, so I'd need to implement a workaround for `Unpin` types.
+
+I'd like some way to mutate the contents of a `BoxedLockCollection`. Currently this can be done by taking the child, mutating it, and creating a new `BoxedLockCollection`. The reason I haven't done this yet is because the set of sorted locks would need to be recalculated afterwards.
 
 It'd be nice to be able to use the mutexes built into the operating system, saving on binary size. Using `std::sync::Mutex` sounds promising, but it doesn't implement `RawMutex`, and implementing that is very difficult, if not impossible. Maybe I could implement my own abstraction over the OS mutexes. I could also simply implement `Lockable` for the standard library mutex.
 
-I've been thinking about adding `Condvar` and `Barrier`, but I've been stopped by two things. I don't use either of those very often, so I'm probably not the right person to try to implement either of them. They're also weird, and harder to prevent deadlocking for. They're sort of the opposite of a mutex, since a mutex guarantees that at least one thread can always access each resource.
+I've been thinking about adding types like `Condvar` and `Barrier`, but I've been stopped by two things. I don't use either of those very often, so I'm probably not the right person to try to implement either of them. They're also weird, and harder to prevent deadlocking for. They're sort of the opposite of a mutex, since a mutex guarantees that at least one thread can always access each resource. I think I can at least implement a deadlock-free `Once`, but it doesn't fit well into the existing lock collection API. There are other types that can deadlock too, like `JoinHandle` and `Stdio`, but I'm hesitant to try those.
 
-Is upgrading an `RwLock` even possible here? I don't know, but I'll probably look into it at some point. Downgrading is definitely possible in at least some cases.
+It's becoming clearer to me that the main blocker for people adopting this is async-support. `ThreadKey` doesn't work well in async contexts because multiple tasks can run on a single thread, and they can move between threads over time. I think the future might hold an `async-happylock` trait which uses a `TaskKey`. Special care will need to be taken to make sure that blocking calls to `lock` don't cause a deadlock.
 
 It'd be interesting to add some methods such as `lock_clone` or `lock_swap`. This would still require a thread key, in case the mutex is already locked. The only way this could be done without a thread key is with a `&mut Mutex<T>`, but we already have `as_mut`. A `try_lock_clone` or `try_lock_swap` might not need a `ThreadKey` though. A special lock that looks like `Cell` but implements `Sync` could be shared without a thread key, because the lock would be dropped immediately (preventing non-preemptive allocation). It might make some common operations easier.
+
+Maybe `lock_api` or `spin` implements some useful methods that I kept out. Maybe there are some lock-specific methods that could be added to `LockCollection`. More types might be lockable using a lock collection. Is upgrading an `RwLock` even possible here? I don't know, but I'll probably look into it at some point. Downgrading is definitely possible in at least some cases.
 
 We could implement a `Readonly` wrapper around the collections that don't allow access to `lock` and `try_lock`. The idea would be that if you're not exclusively locking the collection, then you don't need to check for duplicates in the collection. Calling `.read()` on twice on a recursive `RwLock` twice dooes not cause a deadlock. This would also require a `Recursive` trait.
 

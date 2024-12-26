@@ -17,7 +17,7 @@ use std::mem::MaybeUninit;
 pub unsafe trait RawLock {
 	/// Causes all subsequent calls to the `lock` function on this lock to
 	/// panic. This does not affect anything currently holding the lock.
-	fn kill(&self);
+	fn poison(&self);
 
 	/// Blocks until the lock is acquired
 	///

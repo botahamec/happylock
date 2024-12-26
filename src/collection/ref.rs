@@ -40,9 +40,9 @@ where
 }
 
 unsafe impl<L: Lockable> RawLock for RefLockCollection<'_, L> {
-	fn kill(&self) {
+	fn poison(&self) {
 		for lock in &self.locks {
-			lock.kill();
+			lock.poison();
 		}
 	}
 

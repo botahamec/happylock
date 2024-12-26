@@ -14,10 +14,10 @@ fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 }
 
 unsafe impl<L: Lockable> RawLock for OwnedLockCollection<L> {
-	fn kill(&self) {
+	fn poison(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
-			lock.kill();
+			lock.poison();
 		}
 	}
 

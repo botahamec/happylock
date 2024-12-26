@@ -36,10 +36,10 @@ fn contains_duplicates<L: Lockable>(data: L) -> bool {
 }
 
 unsafe impl<L: Lockable> RawLock for RetryingLockCollection<L> {
-	fn kill(&self) {
+	fn poison(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
-			lock.kill();
+			lock.poison();
 		}
 	}
 
