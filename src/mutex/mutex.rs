@@ -278,7 +278,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn try_lock<'s, 'a: 's, 'k: 'a, Key: Keyable>(
+	pub fn try_lock<'s, 'k: 's, Key: Keyable>(
 		&'s self,
 		key: Key,
 	) -> Result<MutexGuard<'s, 'k, T, Key, R>, Key> {
