@@ -39,6 +39,10 @@ unsafe impl Keyable for ThreadKey {}
 // the ThreadKey can't be moved while a mutable reference to it exists
 unsafe impl Keyable for &mut ThreadKey {}
 
+// Implementing this means we can allow `MutexGuard` to be Sync
+// Safety: a &ThreadKey is useless by design.
+unsafe impl Sync for ThreadKey {}
+
 impl Debug for ThreadKey {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "ThreadKey")
