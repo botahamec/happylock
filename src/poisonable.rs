@@ -28,6 +28,7 @@ pub(crate) struct PoisonFlag(#[cfg(panic = "unwind")] AtomicBool);
 /// indicate that all invariants of the underlying data are upheld, so that
 /// subsequent calls may still return [`Ok`].
 ///
+/// [`Lockable`]: `crate::lockable::Lockable`
 /// [`lock`]: `Poisonable::lock`
 /// [`try_lock`]: `Poisonable::try_lock`
 /// [`into_inner`]: `PoisonError::into_inner`

@@ -151,7 +151,7 @@ pub unsafe trait Sharable: Lockable {
 	/// # Safety
 	///
 	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
-	/// [`RawLock::read`] before calling this function. The locks must not be
+	/// [`RawLock::raw_read`] before calling this function. The locks must not be
 	/// unlocked until this guard is dropped.
 	#[must_use]
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
@@ -188,7 +188,7 @@ pub trait LockableIntoInner: Lockable {
 /// [`Lockable`].
 ///
 /// This is used for types like [`Poisonable`] to access the inner value of a
-/// lock. [`Poisonable::get_mut`] calls [`LockableAsMut::as_mut`] to return a
+/// lock. [`Poisonable::get_mut`] calls [`LockableGetMut::get_mut`] to return a
 /// mutable reference of the inner value. This isn't implemented for some
 /// `Lockable`s, such as `&[T]`.
 ///
