@@ -56,9 +56,9 @@ unsafe impl<L: Lockable> Lockable for Poisonable<L> {
 		let ref_guard = PoisonRef::new(&self.poisoned, self.inner.guard());
 
 		if self.is_poisoned() {
-			Ok(ref_guard)
-		} else {
 			Err(PoisonError::new(ref_guard))
+		} else {
+			Ok(ref_guard)
 		}
 	}
 }
@@ -73,9 +73,9 @@ unsafe impl<L: Sharable> Sharable for Poisonable<L> {
 		let ref_guard = PoisonRef::new(&self.poisoned, self.inner.read_guard());
 
 		if self.is_poisoned() {
-			Ok(ref_guard)
-		} else {
 			Err(PoisonError::new(ref_guard))
+		} else {
+			Ok(ref_guard)
 		}
 	}
 }

@@ -96,7 +96,7 @@ pub type TryLockPoisonableResult<'flag, 'key, G, Key> =
 mod tests {
 	use super::*;
 	use crate::lockable::Lockable;
-	use crate::{Mutex, ThreadKey};
+	use crate::{LockCollection, Mutex, ThreadKey};
 
 	#[test]
 	fn display_works() {
@@ -109,6 +109,24 @@ mod tests {
 	}
 
 	#[test]
+	fn ord_works() {
+		let key = ThreadKey::get().unwrap();
+		let lock1 = Poisonable::new(Mutex::new(1));
+		let lock2 = Poisonable::new(Mutex::new(3));
+		let lock3 = Poisonable::new(Mutex::new(3));
+		let collection = LockCollection::try_new((&lock1, &lock2, &lock3)).unwrap();
+
+		let guard = collection.lock(key);
+		let guard1 = guard.0.as_ref().unwrap();
+		let guard2 = guard.1.as_ref().unwrap();
+		let guard3 = guard.2.as_ref().unwrap();
+		assert!(guard1 < guard2);
+		assert!(guard2 > guard1);
+		assert!(guard2 == guard3);
+		assert!(guard1 != guard3);
+	}
+
+	#[test]
 	fn get_ptrs() {
 		let mutex = Mutex::new(5);
 		let poisonable = Poisonable::new(mutex);
@@ -117,5 +135,11 @@ mod tests {
 
 		assert_eq!(lock_ptrs.len(), 1);
 		assert!(std::ptr::addr_eq(lock_ptrs[0], &poisonable.inner));
+	}
+
+	#[test]
+	fn new_poisonable_is_not_poisoned() {
+		let mutex = Poisonable::new(Mutex::new(42));
+		assert!(!mutex.is_poisoned());
 	}
 }

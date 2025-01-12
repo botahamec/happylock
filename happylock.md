@@ -2,6 +2,7 @@
 marp: true
 theme: gaia
 class: invert
+author: Mica White
 ---
 
 <!-- _class: lead invert -->
@@ -112,7 +113,7 @@ use happylock::{ThreadKey, Mutex};
 
 fn main() {
     // each thread can only have one thread key (that's why we unwrap)
-    // ThreadKey is not Send, Sync, Copy, or Clone
+    // ThreadKey is not Send, Copy, or Clone
     let key = ThreadKey::get().unwrap();
 
     let mutex = Mutex::new(10);
@@ -152,6 +153,8 @@ fn main() {
     *guard.0 += 1;
 }
 ```
+
+This `LockCollection` can be implemented simply by releasing the currently acquired locks and retrying on failure
 
 ---
 
@@ -266,7 +269,17 @@ Time Complexity: O(nlogn)
 
 ## Problem: Live-locking
 
-Although this library is able to successfully prevent deadlocks, livelocks may still be an issue. Imagine thread 1 gets resource 1, thread 2 gets resource 2, thread 1 realizes it can't get resource 2, thread 2 realizes it can't get resource 1, thread 1 drops resource 1, thread 2 drops resource 2, and then repeat forever. In practice, this situation probably wouldn't last forever. But it would be nice if this could be prevented somehow.
+Although this library is able to successfully prevent deadlocks, livelocks may still be an issue.
+
+1. Thread 1 locks mutex 1
+2. Thread 2 locks mutex 2
+3. Thread 1 tries to lock mutex 2 and fails
+4. Thread 2 tries to lock mutex 1 and fails
+5. Thread 1 releases mutex 1
+6. Thread 2 releases mutex 2
+7. Repeat
+
+This pattern will probably end eventually, but we should really avoid it, for performance reasons.
 
 ---
 
@@ -384,8 +397,8 @@ This is what we were trying to avoid earlier
 This is what I used in HappyLock 0.1:
 
 ```rust
-struct ReadLock<'a, T(&'a RwLock<T>);
-struct WriteLock<'a, T(&'a RwLock<T>);
+struct ReadLock<'a, T>(&'a RwLock<T>);
+struct WriteLock<'a, T>(&'a RwLock<T>);
 ```
 
 **Problem:** This can't be used inside of an `OwnedLockCollection`
@@ -413,7 +426,7 @@ unsafe trait Lockable {
 
 ---
 
-## Not every lock can be read doe
+## Not every lock can be read tho
 
 ```rust
 // This trait is used to indicate that reading is actually useful
@@ -429,25 +442,6 @@ impl<L: Sharable> OwnedLockable<L> {
 
 // the same methods exist on other lock collections too
 ```
-
----
-
-## Missing Features
-
-- `Condvar`/`Barrier`
-- We probably don't need `OnceLock` or `LazyLock`
-- Standard Library Backend
-- Mutex poisoning
-- Support for `no_std`
-- Convenience methods: `lock_swap`, `lock_set`?
-- `try_lock_swap` doesn't need a `ThreadKey`
-- Going further: `LockCell` API (preemptive allocation)
-
----
-
-<!--_class: invert lead -->
-
-## What's next?
 
 ---
 
@@ -473,6 +467,48 @@ Allows: `Poisonable<LockCollection>` and `LockCollection<Poisonable>`
 
 ---
 
+# `LockableGetMut` and `LockableIntoInner`
+
+```rust
+fn Mutex::<T>::get_mut(&mut self) -> &mut T // already exists in std
+// this is safe because a mutable reference means nobody else can access the lock
+
+trait LockableGetMut: Lockable {
+    type Inner<'a>;
+
+    fn get_mut(&mut self) -> Self::Inner<'_>
+}
+
+impl<A: LockableGetMut, B: LockableGetMut> LockableGetMut for (A, B) {
+    type Inner = (A::Inner<'a>, B::Inner<'b>);
+
+    fn get_mut(&mut self) -> Self::Inner<'_> {
+        (self.0.get_mut(), self.1.get_mut())
+    }
+}
+```
+
+---
+
+## Missing Features
+
+- `Condvar`/`Barrier`
+- `OnceLock` or `LazyLock`
+- Standard Library Backend
+- Support for `no_std`
+- Convenience methods: `lock_swap`, `lock_set`?
+- `try_lock_swap` doesn't need a `ThreadKey`
+- Going further: `LockCell` API (preemptive allocation)
+
+---
+
+<!--_class: invert lead -->
+
+## What's next?
+
+---
+
+
 ## OS Locks
 
 - Using `parking_lot` makes the binary size much larger
@@ -480,43 +516,6 @@ Allows: `Poisonable<LockCollection>` and `LockCollection<Poisonable>`
 - Creating a new crate based on a fork of the standard library is hard
 - Solution: create a new library (`sys_locks`), which exposes raw locks from the operating system
 - This is more complicated than you might think
-
----
-
-## Expanding Cyclic Wait
-
-> ... sometimes you need to lock an object to read its value and determine what should be locked next... is there a way to address it?
-
-```rust
-let guard = m1.lock(key);
-if *guard == true {
-    let key = Mutex::unlock(m);
-    let data = [&m1, &m2];
-    let collection = LockCollection::try_new(data).unwrap();
-    let guard = collection.lock(key);
-
-    // m1 might no longer be true here...
-}
-```
-
----
-
-## What I Really Want
-
-```txt
-ordered locks: m1, m2, m3
-
-if m1 is true
-    lock m2 and keep m1 locked
-else
-    skip m2 and lock m3
-```
-
-We can specify lock orders using `OwnedLockCollection`
-
-Then we need an iterator over the collection to keep that ordering
-
-This will be hard to do with tuples (but might not be impossible)
 
 ---
 
@@ -616,6 +615,106 @@ A `Readonly` collection cannot be exclusively locked.
   - these have completely different deadlocking rules. someone else should figure this out
 - LazyLock and OnceLock
   - can these even deadlock?
+
+---
+## Expanding Cyclic Wait
+
+> ... sometimes you need to lock an object to read its value and determine what should be locked next... is there a way to address it?
+
+```rust
+let guard = m1.lock(key);
+if *guard == true {
+    let key = Mutex::unlock(m);
+    let data = [&m1, &m2];
+    let collection = LockCollection::try_new(data).unwrap();
+    let guard = collection.lock(key);
+
+    // m1 might no longer be true here...
+}
+```
+
+---
+
+## What I Really Want
+
+```txt
+ordered locks: m1, m2, m3
+
+if m1 is true
+    lock m2 and keep m1 locked
+else
+    skip m2 and lock m3
+```
+
+We can specify lock orders using `OwnedLockCollection`
+
+Then we need an iterator over the collection to keep that ordering
+
+This will be hard to do with tuples (but is not be impossible)
+
+---
+
+## Something like this
+
+```rust
+let key = ThreadKey::get().unwrap();
+let collection: OwnedLockCollection<(Vec<i32>, Vec<String>);
+let iterator: LockIterator<(Vec<i32>, Vec<String>)> = collection.locking_iter(key);
+let (guard, next: LockIterator<Vec<String>>) = collection.next();
+
+unsafe trait IntoLockIterator: Lockable {
+    type Next: Lockable;
+    type Rest;
+
+    unsafe fn next(&self) -> Self::Next; // must be called before `rest`
+    fn rest(&self) -> Self::Rest;
+}
+
+unsafe impl<A: Lockable, B: Lockable> IntoLockIterator for (A, B) {
+    type Next = A;
+    type Rest = B;
+
+    unsafe fn next(&self) -> Self::Next { self.0 }
+
+    unsafe fn rest(&self) -> Self::Rest { self.1 }
+}
+```
+
+---
+
+## Here are the helper functions we'll need
+
+```rust
+struct LockIterator<Current: IntoLockIterator, Rest: IntoLockIterator = ()>;
+
+impl<Current, Rest> LockIterator<Current, Rest> {
+    // locks the next item and moves on
+    fn next(self) -> (Current::Next::Guard, LockIterator<Current::Rest>);
+
+    // moves on without locking anything
+    fn skip(self) -> LockIterator<Current::Rest>;
+
+    // steps into the next item, allowing parts of it to be locked
+    // For example, if i have LockIterator<(Vec<String>, Vec<i32>)>, but only
+    // want to lock parts of the first Vec, then I can step into it,
+    // locking what i need to, and then exit.
+    // This is the first use of LockIterator's second generic parameter
+    fn step_into(self) -> LockIterator<Current::Next, Rest=Current::Rest>;
+
+    // Once I'm done with my step_into, I can leave and move on
+    fn exit(self) -> LockIterator<Rest>;
+}
+```
+
+---
+
+## A Quick Problem with this Approach
+
+We're going to be returning a lot of guards.
+
+The `ThreadKey` is held by the `LockIterator`.
+
+**How do we ensure that the `ThreadKey` is not used again until all of the guards are dropped?**
 
 ---
 

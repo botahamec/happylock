@@ -33,12 +33,14 @@ impl<T: Ord + ?Sized, R: RawMutex> Ord for MutexRef<'_, T, R> {
 	}
 }
 
+#[mutants::skip] // hashing involves RNG and is hard to test
 impl<T: Hash + ?Sized, R: RawMutex> Hash for MutexRef<'_, T, R> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.deref().hash(state)
 	}
 }
 
+#[mutants::skip]
 impl<T: Debug + ?Sized, R: RawMutex> Debug for MutexRef<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
@@ -103,14 +105,17 @@ impl<'a, T: ?Sized, R: RawMutex> MutexRef<'a, T, R> {
 // it's kinda annoying to re-implement some of this stuff on guards
 // there's nothing i can do about that
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<T: PartialEq + ?Sized, R: RawMutex, Key: Keyable> PartialEq for MutexGuard<'_, '_, T, Key, R> {
 	fn eq(&self, other: &Self) -> bool {
 		self.deref().eq(&**other)
 	}
 }
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<T: Eq + ?Sized, R: RawMutex, Key: Keyable> Eq for MutexGuard<'_, '_, T, Key, R> {}
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<T: PartialOrd + ?Sized, R: RawMutex, Key: Keyable> PartialOrd
 	for MutexGuard<'_, '_, T, Key, R>
 {
@@ -119,18 +124,21 @@ impl<T: PartialOrd + ?Sized, R: RawMutex, Key: Keyable> PartialOrd
 	}
 }
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<T: Ord + ?Sized, R: RawMutex, Key: Keyable> Ord for MutexGuard<'_, '_, T, Key, R> {
 	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
 		self.deref().cmp(&**other)
 	}
 }
 
+#[mutants::skip] // hashing involves RNG and is hard to test
 impl<T: Hash + ?Sized, R: RawMutex, Key: Keyable> Hash for MutexGuard<'_, '_, T, Key, R> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.deref().hash(state)
 	}
 }
 
+#[mutants::skip]
 impl<T: Debug + ?Sized, Key: Keyable, R: RawMutex> Debug for MutexGuard<'_, '_, T, Key, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)

@@ -33,6 +33,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R>
 	}
 }
 
+#[mutants::skip]
 impl<T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped

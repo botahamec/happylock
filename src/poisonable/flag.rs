@@ -28,6 +28,7 @@ impl PoisonFlag {
 		Self()
 	}
 
+	#[mutants::skip] // None of the tests have panic = "abort", so this can't be tested
 	pub fn is_poisoned(&self) -> bool {
 		false
 	}

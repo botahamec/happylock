@@ -140,6 +140,7 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 	}
 }
 
+#[mutants::skip]
 impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped

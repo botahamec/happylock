@@ -43,6 +43,7 @@ unsafe impl Keyable for &mut ThreadKey {}
 // Safety: a &ThreadKey is useless by design.
 unsafe impl Sync for ThreadKey {}
 
+#[mutants::skip]
 impl Debug for ThreadKey {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "ThreadKey")

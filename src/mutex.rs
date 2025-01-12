@@ -161,7 +161,7 @@ pub struct MutexGuard<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable + 'key, R: RawM
 
 #[cfg(test)]
 mod tests {
-	use crate::ThreadKey;
+	use crate::{LockCollection, ThreadKey};
 
 	use super::*;
 
@@ -196,6 +196,21 @@ mod tests {
 		let mutex: crate::Mutex<_> = Mutex::new("Hello, world!");
 		let guard = unsafe { mutex.try_lock_no_key().unwrap() }; // TODO lock_no_key
 		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+
+	#[test]
+	fn ord_works() {
+		let key = ThreadKey::get().unwrap();
+		let mutex1: crate::Mutex<_> = Mutex::new(1);
+		let mutex2: crate::Mutex<_> = Mutex::new(2);
+		let mutex3: crate::Mutex<_> = Mutex::new(2);
+		let collection = LockCollection::try_new((&mutex1, &mutex2, &mutex3)).unwrap();
+
+		let guard = collection.lock(key);
+		assert!(guard.0 < guard.1);
+		assert!(guard.1 > guard.0);
+		assert!(guard.1 == guard.2);
+		assert!(guard.0 != guard.2)
 	}
 
 	#[test]

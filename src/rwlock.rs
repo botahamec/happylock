@@ -117,6 +117,7 @@ pub struct RwLockWriteGuard<'a, 'key: 'a, T: ?Sized, Key: Keyable + 'key, R: Raw
 #[cfg(test)]
 mod tests {
 	use crate::lockable::Lockable;
+	use crate::LockCollection;
 	use crate::RwLock;
 	use crate::ThreadKey;
 
@@ -234,6 +235,21 @@ mod tests {
 	}
 
 	#[test]
+	fn write_ord() {
+		let key = ThreadKey::get().unwrap();
+		let lock1: crate::RwLock<_> = RwLock::new(1);
+		let lock2: crate::RwLock<_> = RwLock::new(5);
+		let lock3: crate::RwLock<_> = RwLock::new(5);
+		let collection = LockCollection::try_new((&lock1, &lock2, &lock3)).unwrap();
+		let guard = collection.lock(key);
+
+		assert!(guard.0 < guard.1);
+		assert!(guard.1 > guard.0);
+		assert!(guard.1 == guard.2);
+		assert!(guard.0 != guard.2);
+	}
+
+	#[test]
 	fn read_ref_display_works() {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 		let guard = unsafe { lock.try_read_no_key().unwrap() };
@@ -245,6 +261,21 @@ mod tests {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 		let guard = unsafe { lock.try_write_no_key().unwrap() };
 		assert_eq!(guard.to_string(), "Hello, world!".to_string());
+	}
+
+	#[test]
+	fn read_ord() {
+		let key = ThreadKey::get().unwrap();
+		let lock1: crate::RwLock<_> = RwLock::new(1);
+		let lock2: crate::RwLock<_> = RwLock::new(5);
+		let lock3: crate::RwLock<_> = RwLock::new(5);
+		let collection = LockCollection::try_new((&lock1, &lock2, &lock3)).unwrap();
+		let guard = collection.read(key);
+
+		assert!(guard.0 < guard.1);
+		assert!(guard.1 > guard.0);
+		assert!(guard.1 == guard.2);
+		assert!(guard.0 != guard.2);
 	}
 
 	#[test]

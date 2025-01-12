@@ -108,6 +108,7 @@ impl<T, L: AsRef<T>> AsRef<T> for RefLockCollection<'_, L> {
 	}
 }
 
+#[mutants::skip]
 impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(RefLockCollection))

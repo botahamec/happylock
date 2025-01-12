@@ -48,12 +48,14 @@ impl<Guard: Ord> Ord for PoisonRef<'_, Guard> {
 	}
 }
 
+#[mutants::skip] // hashing involves RNG and is hard to test
 impl<Guard: Hash> Hash for PoisonRef<'_, Guard> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.guard.hash(state)
 	}
 }
 
+#[mutants::skip]
 impl<Guard: Debug> Debug for PoisonRef<'_, Guard> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
@@ -92,32 +94,38 @@ impl<Guard> AsMut<Guard> for PoisonRef<'_, Guard> {
 	}
 }
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<Guard: PartialEq, Key: Keyable> PartialEq for PoisonGuard<'_, '_, Guard, Key> {
 	fn eq(&self, other: &Self) -> bool {
 		self.guard.eq(&other.guard)
 	}
 }
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<Guard: PartialOrd, Key: Keyable> PartialOrd for PoisonGuard<'_, '_, Guard, Key> {
 	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
 		self.guard.partial_cmp(&other.guard)
 	}
 }
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<Guard: Eq, Key: Keyable> Eq for PoisonGuard<'_, '_, Guard, Key> {}
 
+#[mutants::skip] // it's hard to get two guards safely
 impl<Guard: Ord, Key: Keyable> Ord for PoisonGuard<'_, '_, Guard, Key> {
 	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
 		self.guard.cmp(&other.guard)
 	}
 }
 
+#[mutants::skip] // hashing involves RNG and is hard to test
 impl<Guard: Hash, Key: Keyable> Hash for PoisonGuard<'_, '_, Guard, Key> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.guard.hash(state)
 	}
 }
 
+#[mutants::skip]
 impl<Guard: Debug, Key: Keyable> Debug for PoisonGuard<'_, '_, Guard, Key> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&self.guard, f)

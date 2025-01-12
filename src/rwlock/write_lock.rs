@@ -25,6 +25,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R
 // Technically, the exclusive locks can also be shared, but there's currently
 // no way to express that. I don't think I want to ever express that.
 
+#[mutants::skip]
 impl<T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped

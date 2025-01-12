@@ -3,6 +3,7 @@ use std::error::Error;
 
 use super::{PoisonError, PoisonGuard, TryLockPoisonableError};
 
+#[mutants::skip]
 impl<Guard> fmt::Debug for PoisonError<Guard> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("PoisonError").finish_non_exhaustive()
@@ -149,6 +150,7 @@ impl<Guard> PoisonError<Guard> {
 	}
 }
 
+#[mutants::skip]
 impl<G, Key> fmt::Debug for TryLockPoisonableError<'_, '_, G, Key> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {

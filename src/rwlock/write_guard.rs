@@ -33,12 +33,14 @@ impl<T: Ord + ?Sized, R: RawRwLock> Ord for RwLockWriteRef<'_, T, R> {
 	}
 }
 
+#[mutants::skip] // hashing involves PRNG and is difficult to test
 impl<T: Hash + ?Sized, R: RawRwLock> Hash for RwLockWriteRef<'_, T, R> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.deref().hash(state)
 	}
 }
 
+#[mutants::skip]
 impl<T: Debug + ?Sized, R: RawRwLock> Debug for RwLockWriteRef<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
@@ -100,6 +102,7 @@ impl<'a, T: ?Sized + 'a, R: RawRwLock> RwLockWriteRef<'a, T, R> {
 	}
 }
 
+#[mutants::skip] // it's hard to get two read guards safely
 impl<T: PartialEq + ?Sized, R: RawRwLock, Key: Keyable> PartialEq
 	for RwLockWriteGuard<'_, '_, T, Key, R>
 {
@@ -108,8 +111,10 @@ impl<T: PartialEq + ?Sized, R: RawRwLock, Key: Keyable> PartialEq
 	}
 }
 
+#[mutants::skip] // it's hard to get two read guards safely
 impl<T: Eq + ?Sized, R: RawRwLock, Key: Keyable> Eq for RwLockWriteGuard<'_, '_, T, Key, R> {}
 
+#[mutants::skip] // it's hard to get two read guards safely
 impl<T: PartialOrd + ?Sized, R: RawRwLock, Key: Keyable> PartialOrd
 	for RwLockWriteGuard<'_, '_, T, Key, R>
 {
@@ -118,18 +123,21 @@ impl<T: PartialOrd + ?Sized, R: RawRwLock, Key: Keyable> PartialOrd
 	}
 }
 
+#[mutants::skip] // it's hard to get two read guards safely
 impl<T: Ord + ?Sized, R: RawRwLock, Key: Keyable> Ord for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
 		self.deref().cmp(&**other)
 	}
 }
 
+#[mutants::skip] // hashing involves PRNG and is difficult to test
 impl<T: Hash + ?Sized, R: RawRwLock, Key: Keyable> Hash for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.deref().hash(state)
 	}
 }
 
+#[mutants::skip]
 impl<T: Debug + ?Sized, Key: Keyable, R: RawRwLock> Debug for RwLockWriteGuard<'_, '_, T, Key, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&**self, f)
