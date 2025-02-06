@@ -41,6 +41,7 @@ where
 
 unsafe impl<L: Lockable> RawLock for RefLockCollection<'_, L> {
 	#[mutants::skip] // this should never run
+	#[cfg(not(tarpaulin_include))]
 	fn poison(&self) {
 		for lock in &self.locks {
 			lock.poison();
@@ -109,6 +110,7 @@ impl<T, L: AsRef<T>> AsRef<T> for RefLockCollection<'_, L> {
 }
 
 #[mutants::skip]
+#[cfg(not(tarpaulin_include))]
 impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(RefLockCollection))

@@ -34,6 +34,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R>
 }
 
 #[mutants::skip]
+#[cfg(not(tarpaulin_include))]
 impl<T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
@@ -108,7 +109,7 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	/// use happylock::rwlock::ReadLock;
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock: &'static mut RwLock<_> = Box::leak(Box::new(RwLock::new(1)));
+	/// let lock: RwLock<_> = RwLock::new(1);
 	/// let reader = ReadLock::new(&lock);
 	///
 	/// let n = reader.lock(key);

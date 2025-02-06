@@ -29,6 +29,7 @@ impl PoisonFlag {
 	}
 
 	#[mutants::skip] // None of the tests have panic = "abort", so this can't be tested
+	#[cfg(not(tarpaulin_include))]
 	pub fn is_poisoned(&self) -> bool {
 		false
 	}

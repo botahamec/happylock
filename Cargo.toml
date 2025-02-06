@@ -1,6 +1,6 @@
 [package]
 name = "happylock"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Mica White <botahamec@outlook.com>"]
 edition = "2021"
 rust-version = "1.82"
@@ -25,3 +25,6 @@ parking_lot = "0.12"
 
 [features]
 default = ["parking_lot"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin_include)"] }

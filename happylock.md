@@ -13,6 +13,96 @@ deadlock-free mutexes at compile-time
 
 ---
 
+## What is a Mutex?
+
+It gives mutually-exclusive access for one thread, to prevent races.
+
+```c
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INIT;
+static int number = 1;
+
+void thread_1() {
+    pthread_mutex_lock(&mutex);
+    number = 6;
+    pthread_mutex_unlock(&mutex);
+}
+void thread_2() {
+    pthread_mutex_lock(&mutex);
+    printf("%d", number);
+    pthread_mutex_unlock(&mutex);
+}
+```
+
+This prevents the number from being modified while it is being printed, which would cause undefined behavior.
+
+---
+
+## Quick Refresh on Borrow Checker Rules
+
+1. You may have multiple immutable references to a value at a time
+2. If there is a mutable reference to a value, then it is the only reference
+3. Values cannot be moved while they are being referenced
+
+```rust
+let s = String::new("Hello, world!");
+let r1 = &s;
+let r2 = &s; // this is allowed because of #1
+let mr = &mut s; // illegal: rule #2
+drop(s); // also illegal: rule #3
+println!("{r1} {r2}");
+```
+
+---
+
+## Rust Mutexes
+
+In Rust, the mutex is safer than in C. The mutex protects data the data itself rather than sections of code.
+
+```rust
+static NUMBER: Mutex<i32> = Mutex::new(1);
+
+fn thread_1() {
+    // MutexGuard grants access to the data inside of the mutex
+    // We cannot access this data without locking first
+    let number: MutexGuard<'_, i32> = NUMBER.lock().unwrap();
+    // MutexGuard is a smart pointer that we can modify directly
+    *number += 5;
+
+    // when the MutexGuard goes out of scope, it unlocks the mutex for you
+}
+```
+
+---
+
+## What is a deadlock?
+
+The lock function locks until no thread has acquired the thread key.
+
+A simple way to cause deadlock is to lock twice on the same thread.
+
+```rust
+let number = Mutex::new(1);
+let guard1 = number.lock().unwrap();
+// now everybody has to wait until guard1 is dropped
+
+let guard2 = number.lock().unwrap(); // but wait, guard1 still exists
+// and we can't drop guard1, because we have to wait for this to finish
+// THIS IS A DEADLOCK! (in C, this causes undefined behavior)
+
+// we'll never get to do this
+println!("{guard1} {guard2}");
+```
+
+---
+
+## The Dining Philosopher's Problem
+
+This is another example of deadlock, which is in the category of "deadly embrace"
+
+<img src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ffiles.codingninjas.in%2Farticle_images%2Fdining-philosopher-problem-using-semaphores-1-1643507259.jpg&f=1&nofb=1&ipt=d8d17865fc8cb4c2e66454e6833d43e83f3965573786c2c54cff601bae03e8a3&ipo=images" height="480" />
+
+---
+
 ## Four Conditions for Deadlock
 
 1. Mutual Exclusion
@@ -70,23 +160,6 @@ Acquiring a new lock requires releasing all currently-held locks.
 
 ---
 
-## Quick Refresh on Borrow Checker Rules
-
-1. You may have multiple immutable references to a value at a time
-2. If there is a mutable reference to a value, then it is the only reference
-3. Values cannot be moved while they are being referenced
-
-```rust
-let s = String::new("Hello, world!");
-let r1 = &s;
-let r2 = &s; // this is allowed because of #1
-let mr = &mut s; // illegal: rule #2
-drop(s); // also illegal: rule #3
-println!("{r1} {r2}");
-```
-
----
-
 ## How could an Operating System do this?
 
 ```c
@@ -130,7 +203,7 @@ fn main() {
 
 ## Performance: it's freaking fast
 
-`ThreadKey` is a mostly zero-cosst abstraction. It takes no memory at runtime. The only cost is getting and dropping the key.
+`ThreadKey` is a mostly zero-cost abstraction. It takes no memory at runtime. The only cost is getting and dropping the key.
 
 `Mutex` is a thin wrapper around `parking_lot`. There's also a `spin` backend if needed for some reason.
 
@@ -295,7 +368,7 @@ This pattern will probably end eventually, but we should really avoid it, for pe
 - I can't sort a tuple
   - Don't return them sorted, silly
 - Indexing the locks in the right order
-  - Have `get_ptrs` return a `&dyn Lock`
+  - Have `get_ptrs` return a `&dyn RawLock`
   - Start by locking everything
   - Then call a separate `guard` method to create the guard
 
@@ -312,7 +385,7 @@ unsafe trait RawLock {
 
 unsafe trait Lockable {  // this is a bad name (LockGroup?)
     type Guard<'g>;
-    fn get_locks<'a>(&'a self, &mut Vec<&'a dyn Lock>);
+    fn get_locks<'a>(&'a self, &mut Vec<&'a dyn RawLock>);
     unsafe fn guard<'g>(&'g self) -> Self::Guard<'g>;
 }
 ```
@@ -416,10 +489,10 @@ unsafe trait RawLock {
     unsafe fn unlock_read(&self);
 }
 
-// update Lockable
-unsafe trait Lockable {
-    // * snip *
+// This trait is used to indicate that reading is actually useful
+unsafe trait Sharable: Lockable {
     type ReadGuard<'g> where Self: 'g;
+
     unsafe fn read_guard<'g>(&'g self) -> Self::ReadGuard<'g>;
 }
 ```
@@ -429,9 +502,6 @@ unsafe trait Lockable {
 ## Not every lock can be read tho
 
 ```rust
-// This trait is used to indicate that reading is actually useful
-unsafe trait Sharable: Lockable {}
-
 impl<L: Sharable> OwnedLockable<L> {
     pub fn read<..>(&'g self, key: Key) -> LockGuard<..> { /* ... */ }
 
@@ -467,7 +537,7 @@ Allows: `Poisonable<LockCollection>` and `LockCollection<Poisonable>`
 
 ---
 
-# `LockableGetMut` and `LockableIntoInner`
+# `LockableGetMut`
 
 ```rust
 fn Mutex::<T>::get_mut(&mut self) -> &mut T // already exists in std
@@ -508,7 +578,6 @@ impl<A: LockableGetMut, B: LockableGetMut> LockableGetMut for (A, B) {
 
 ---
 
-
 ## OS Locks
 
 - Using `parking_lot` makes the binary size much larger
@@ -516,14 +585,6 @@ impl<A: LockableGetMut, B: LockableGetMut> LockableGetMut for (A, B) {
 - Creating a new crate based on a fork of the standard library is hard
 - Solution: create a new library (`sys_locks`), which exposes raw locks from the operating system
 - This is more complicated than you might think
-
----
-
-## Compile-Time Duplicate Checks
-
-As Mikhail keeps reminding me, it might be possible to do the duplicate detection at compile-time using a Bloom filter. This is something I'll have to try at some point.
-
-This would only be useful for `RetryingLockCollection`
 
 ---
 
@@ -543,17 +604,9 @@ let cloned = mutex.lock_clone(); // deadlock
 
 ---
 
-# Try-Convenience Methods
-
-- `Mutex::try_swap`, `try_set` would not require a `ThreadKey`
-- They can't block the current thread (because `try`), and they can't block other threads (because they release the lock immediately)
-- Same probably applies to `try_clone` and `try_take`, but could be a problem if the `Clone` implementation tries to lock something else
-
----
-
 ## `LockCell`
 
-This would only allow methods tyo be called which immediately release the lock
+This would only allow methods to be called which immediately release the lock
 
 This would never require a `ThreadKey`
 
@@ -614,9 +667,10 @@ A `Readonly` collection cannot be exclusively locked.
 - Condvar and Barrier
   - these have completely different deadlocking rules. someone else should figure this out
 - LazyLock and OnceLock
-  - can these even deadlock?
+  - These can deadlock, but it's very hard to do so accidentally
 
 ---
+
 ## Expanding Cyclic Wait
 
 > ... sometimes you need to lock an object to read its value and determine what should be locked next... is there a way to address it?
@@ -624,7 +678,7 @@ A `Readonly` collection cannot be exclusively locked.
 ```rust
 let guard = m1.lock(key);
 if *guard == true {
-    let key = Mutex::unlock(m);
+    let key = Mutex::unlock(guard);
     let data = [&m1, &m2];
     let collection = LockCollection::try_new(data).unwrap();
     let guard = collection.lock(key);
@@ -660,7 +714,7 @@ This will be hard to do with tuples (but is not be impossible)
 let key = ThreadKey::get().unwrap();
 let collection: OwnedLockCollection<(Vec<i32>, Vec<String>);
 let iterator: LockIterator<(Vec<i32>, Vec<String>)> = collection.locking_iter(key);
-let (guard, next: LockIterator<Vec<String>>) = collection.next();
+let (guard, next: LockIterator<Vec<String>>) = iterator.next();
 
 unsafe trait IntoLockIterator: Lockable {
     type Next: Lockable;
@@ -712,12 +766,57 @@ impl<Current, Rest> LockIterator<Current, Rest> {
 
 We're going to be returning a lot of guards.
 
-The `ThreadKey` is held by the `LockIterator`.
+The `ThreadKey` needs to be held somewhere while the guards are active.
 
 **How do we ensure that the `ThreadKey` is not used again until all of the guards are dropped?**
 
 ---
 
+## The Solution
+
+First, every guard needs to have an immutable reference to the `ThreadKey`.
+
+```rust
+// this is the MutexGuard that doesn't hold a ThreadKey
+// We'll modify it to hold an immutable reference to the ThreadKey
+// ThreadKey cannot be moved or mutably referenced during this lifetime
+struct MutexRef<'a, 'key, T, Key: Keyable + 'key>
+struct RwLockReadRef<'a, 'key, T, Key: Keyable + 'key>
+struct RwLockWriteRef<'a, 'key, T, Key: Keyable + 'key>
+```
+
+---
+
+## The Solution
+
+But where do we store the `ThreadKey`?
+
+```rust
+// This type will hold the ThreadKey
+struct LockIteratorGuard<'a, 'key, L, Key: Keyable + 'key>
+```
+
+---
+
+## The Solution
+
+Then `LockIterator` must hold a reference to the guard.
+
+```rust
+struct LockIterator<'a, Current, Rest = ()>
+```
+
+---
+
+## The Solution
+
+And we can get the first LockIterator by taking a mutable reference to the guard.
+
+```rust
+LockIteratorGuard::next<'a>(&'a mut self) -> LockIterator<'a, L::Next>
+```
+
+---
 <!--_class: invert lead -->
 
 ## The End

@@ -8,6 +8,7 @@ use crate::Keyable;
 use super::{utils, LockGuard, OwnedLockCollection};
 
 #[mutants::skip] // it's hard to test individual locks in an OwnedLockCollection
+#[cfg(not(tarpaulin_include))]
 fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	let mut locks = Vec::new();
 	data.get_ptrs(&mut locks);
@@ -16,6 +17,7 @@ fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 
 unsafe impl<L: Lockable> RawLock for OwnedLockCollection<L> {
 	#[mutants::skip] // this should never run
+	#[cfg(not(tarpaulin_include))]
 	fn poison(&self) {
 		let locks = get_locks(&self.data);
 		for lock in locks {
@@ -63,6 +65,7 @@ unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
 		Self: 'g;
 
 	#[mutants::skip] // It's hard to test lkocks in an OwnedLockCollection, because they're owned
+	#[cfg(not(tarpaulin_include))]
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.data.get_ptrs(ptrs)
 	}

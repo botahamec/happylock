@@ -1,7 +1,6 @@
-use std::cell::Cell;
+use std::cell::{Cell, LazyCell};
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
-use std::sync::LazyLock;
 
 use sealed::Sealed;
 
@@ -16,7 +15,7 @@ mod sealed {
 }
 
 thread_local! {
-	static KEY: LazyLock<KeyCell> = LazyLock::new(KeyCell::default);
+	static KEY: LazyCell<KeyCell> = LazyCell::new(KeyCell::default);
 }
 
 /// The key for the current thread.
@@ -44,6 +43,7 @@ unsafe impl Keyable for &mut ThreadKey {}
 unsafe impl Sync for ThreadKey {}
 
 #[mutants::skip]
+#[cfg(not(tarpaulin_include))]
 impl Debug for ThreadKey {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "ThreadKey")

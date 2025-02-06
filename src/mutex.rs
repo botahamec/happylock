@@ -214,6 +214,36 @@ mod tests {
 	}
 
 	#[test]
+	fn ref_as_mut() {
+		let mut key = ThreadKey::get().unwrap();
+		let collection = LockCollection::new(crate::Mutex::new(0));
+		let mut guard = collection.lock(&mut key);
+		let guard_mut = guard.as_mut().as_mut();
+
+		*guard_mut = 3;
+		drop(guard);
+
+		let guard = collection.lock(&mut key);
+
+		assert_eq!(guard.as_ref().as_ref(), &3);
+	}
+
+	#[test]
+	fn guard_as_mut() {
+		let mut key = ThreadKey::get().unwrap();
+		let mutex = crate::Mutex::new(0);
+		let mut guard = mutex.lock(&mut key);
+		let guard_mut = guard.as_mut();
+
+		*guard_mut = 3;
+		drop(guard);
+
+		let guard = mutex.lock(&mut key);
+
+		assert_eq!(guard.as_ref(), &3);
+	}
+
+	#[test]
 	fn dropping_guard_releases_mutex() {
 		let mut key = ThreadKey::get().unwrap();
 		let mutex: crate::Mutex<_> = Mutex::new("Hello, world!");

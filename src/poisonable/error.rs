@@ -4,6 +4,7 @@ use std::error::Error;
 use super::{PoisonError, PoisonGuard, TryLockPoisonableError};
 
 #[mutants::skip]
+#[cfg(not(tarpaulin_include))]
 impl<Guard> fmt::Debug for PoisonError<Guard> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("PoisonError").finish_non_exhaustive()
@@ -12,6 +13,7 @@ impl<Guard> fmt::Debug for PoisonError<Guard> {
 
 impl<Guard> fmt::Display for PoisonError<Guard> {
 	#[cfg_attr(test, mutants::skip)]
+	#[cfg(not(tarpaulin_include))]
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		"poisoned lock: another task failed inside".fmt(f)
 	}
@@ -151,6 +153,7 @@ impl<Guard> PoisonError<Guard> {
 }
 
 #[mutants::skip]
+#[cfg(not(tarpaulin_include))]
 impl<G, Key> fmt::Debug for TryLockPoisonableError<'_, '_, G, Key> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
@@ -162,6 +165,7 @@ impl<G, Key> fmt::Debug for TryLockPoisonableError<'_, '_, G, Key> {
 
 impl<G, Key> fmt::Display for TryLockPoisonableError<'_, '_, G, Key> {
 	#[cfg_attr(test, mutants::skip)]
+	#[cfg(not(tarpaulin_include))]
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
 			Self::Poisoned(..) => "poisoned lock: another task failed inside",

@@ -276,10 +276,8 @@ macro_rules! tuple_impls {
 		unsafe impl<$($generic: Lockable,)*> Lockable for ($($generic,)*) {
 			type Guard<'g> = ($($generic::Guard<'g>,)*) where Self: 'g;
 
-
-
 			fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-				self.0.get_ptrs(ptrs);
+				$(self.$value.get_ptrs(ptrs));*
 			}
 
 			unsafe fn guard(&self) -> Self::Guard<'_> {

@@ -22,6 +22,7 @@ fn contains_duplicates(l: &[&dyn RawLock]) -> bool {
 
 unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 	#[mutants::skip] // this should never be called
+	#[cfg(not(tarpaulin_include))]
 	fn poison(&self) {
 		for lock in &self.locks {
 			lock.poison();
@@ -33,6 +34,7 @@ unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 	}
 
 	unsafe fn raw_try_lock(&self) -> bool {
+		println!("{}", self.locks().len());
 		utils::ordered_try_lock(self.locks())
 	}
 
@@ -136,6 +138,7 @@ unsafe impl<L: Sync> Sync for BoxedLockCollection<L> {}
 
 impl<L> Drop for BoxedLockCollection<L> {
 	#[mutants::skip] // i can't test for a memory leak
+	#[cfg(not(tarpaulin_include))]
 	fn drop(&mut self) {
 		unsafe {
 			// safety: this collection will never be locked again
@@ -155,6 +158,7 @@ impl<T, L: AsRef<T>> AsRef<T> for BoxedLockCollection<L> {
 }
 
 #[mutants::skip]
+#[cfg(not(tarpaulin_include))]
 impl<L: Debug> Debug for BoxedLockCollection<L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(BoxedLockCollection))
@@ -197,8 +201,8 @@ impl<L> BoxedLockCollection<L> {
 	#[must_use]
 	pub fn into_child(mut self) -> L {
 		unsafe {
-			// safety: this collection will never be locked again
-			self.locks.clear();
+			// safety: this collection will never be used again
+			std::ptr::drop_in_place(&mut self.locks);
 			// safety: this was allocated using a box, and is now unique
 			let boxed: Box<UnsafeCell<L>> = Box::from_raw(self.data.cast_mut());
 			// to prevent a double free
@@ -621,7 +625,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{Mutex, ThreadKey};
+	use crate::{Mutex, RwLock, ThreadKey};
 
 	#[test]
 	fn non_duplicates_allowed() {
@@ -634,6 +638,98 @@ mod tests {
 	fn duplicates_not_allowed() {
 		let mutex1 = Mutex::new(0);
 		assert!(BoxedLockCollection::try_new([&mutex1, &mutex1]).is_none())
+	}
+
+	#[test]
+	fn contains_duplicates_empty() {
+		assert!(!contains_duplicates(&[]))
+	}
+
+	#[test]
+	fn try_lock_works() {
+		let key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([Mutex::new(1), Mutex::new(2)]);
+		let guard = collection.try_lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_lock(key);
+				assert!(guard.is_err());
+			});
+		});
+
+		assert!(guard.is_ok());
+	}
+
+	#[test]
+	fn try_read_works() {
+		let key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([RwLock::new(1), RwLock::new(2)]);
+		let guard = collection.try_read(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_read(key);
+				assert!(guard.is_ok());
+			});
+		});
+
+		assert!(guard.is_ok());
+	}
+
+	#[test]
+	fn try_lock_fails_with_one_exclusive_lock() {
+		let key = ThreadKey::get().unwrap();
+		let locks = [Mutex::new(1), Mutex::new(2)];
+		let collection = BoxedLockCollection::new_ref(&locks);
+		let guard = locks[1].try_lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_lock(key);
+				assert!(guard.is_err());
+			});
+		});
+
+		assert!(guard.is_ok());
+	}
+
+	#[test]
+	fn try_read_fails_during_exclusive_lock() {
+		let key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([RwLock::new(1), RwLock::new(2)]);
+		let guard = collection.try_lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_read(key);
+				assert!(guard.is_err());
+			});
+		});
+
+		assert!(guard.is_ok());
+	}
+
+	#[test]
+	fn try_read_fails_with_one_exclusive_lock() {
+		let key = ThreadKey::get().unwrap();
+		let locks = [RwLock::new(1), RwLock::new(2)];
+		let collection = BoxedLockCollection::new_ref(&locks);
+		let guard = locks[1].try_write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_read(key);
+				assert!(guard.is_err());
+			});
+		});
+
+		assert!(guard.is_ok());
 	}
 
 	#[test]
