@@ -628,6 +628,69 @@ mod tests {
 	use crate::{Mutex, RwLock, ThreadKey};
 
 	#[test]
+	fn from_iterator() {
+		let key = ThreadKey::get().unwrap();
+		let collection: BoxedLockCollection<Vec<Mutex<&str>>> =
+			[Mutex::new("foo"), Mutex::new("bar"), Mutex::new("baz")]
+				.into_iter()
+				.collect();
+		let guard = collection.lock(key);
+		// TODO impl PartialEq<T> for MutexRef<T>
+		assert_eq!(*guard[0], "foo");
+		assert_eq!(*guard[1], "bar");
+		assert_eq!(*guard[2], "baz");
+	}
+
+	#[test]
+	fn from() {
+		let key = ThreadKey::get().unwrap();
+		let collection =
+			BoxedLockCollection::from([Mutex::new("foo"), Mutex::new("bar"), Mutex::new("baz")]);
+		let guard = collection.lock(key);
+		// TODO impl PartialEq<T> for MutexRef<T>
+		assert_eq!(*guard[0], "foo");
+		assert_eq!(*guard[1], "bar");
+		assert_eq!(*guard[2], "baz");
+	}
+
+	#[test]
+	fn into_owned_iterator() {
+		let collection = BoxedLockCollection::new([Mutex::new(0), Mutex::new(1), Mutex::new(2)]);
+		for (i, mutex) in collection.into_iter().enumerate() {
+			assert_eq!(mutex.into_inner(), i);
+		}
+	}
+
+	#[test]
+	fn into_ref_iterator() {
+		let mut key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([Mutex::new(0), Mutex::new(1), Mutex::new(2)]);
+		for (i, mutex) in (&collection).into_iter().enumerate() {
+			assert_eq!(*mutex.lock(&mut key), i);
+		}
+	}
+
+	#[test]
+	fn ref_iterator() {
+		let mut key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([Mutex::new(0), Mutex::new(1), Mutex::new(2)]);
+		for (i, mutex) in collection.iter().enumerate() {
+			assert_eq!(*mutex.lock(&mut key), i);
+		}
+	}
+
+	#[test]
+	#[allow(clippy::float_cmp)]
+	fn uses_correct_default() {
+		let collection =
+			BoxedLockCollection::<(Mutex<f64>, Mutex<Option<i32>>, Mutex<usize>)>::default();
+		let tuple = collection.into_inner();
+		assert_eq!(tuple.0, 0.0);
+		assert!(tuple.1.is_none());
+		assert_eq!(tuple.2, 0)
+	}
+
+	#[test]
 	fn non_duplicates_allowed() {
 		let mutex1 = Mutex::new(0);
 		let mutex2 = Mutex::new(1);
@@ -730,6 +793,36 @@ mod tests {
 		});
 
 		assert!(guard.is_ok());
+	}
+
+	#[test]
+	fn unlock_collection_works() {
+		let key = ThreadKey::get().unwrap();
+		let mutex1 = Mutex::new("foo");
+		let mutex2 = Mutex::new("bar");
+		let collection = BoxedLockCollection::try_new((&mutex1, &mutex2)).unwrap();
+		let guard = collection.lock(key);
+		let key = BoxedLockCollection::<(&Mutex<_>, &Mutex<_>)>::unlock(guard);
+
+		assert!(mutex1.try_lock(key).is_ok())
+	}
+
+	#[test]
+	fn read_unlock_collection_works() {
+		let key = ThreadKey::get().unwrap();
+		let lock1 = RwLock::new("foo");
+		let lock2 = RwLock::new("bar");
+		let collection = BoxedLockCollection::try_new((&lock1, &lock2)).unwrap();
+		let guard = collection.read(key);
+		let key = BoxedLockCollection::<(&RwLock<_>, &RwLock<_>)>::unlock_read(guard);
+
+		assert!(lock1.try_write(key).is_ok())
+	}
+
+	#[test]
+	fn into_inner_works() {
+		let collection = BoxedLockCollection::new((Mutex::new("Hello"), Mutex::new(47)));
+		assert_eq!(collection.into_inner(), ("Hello", 47))
 	}
 
 	#[test]

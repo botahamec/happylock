@@ -257,10 +257,10 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// *guard.0 += 1;
 	/// *guard.1 = "1";
 	/// ```
-	pub fn lock<'key: 'a, Key: Keyable + 'key>(
-		&'a self,
+	pub fn lock<'g, 'key: 'g, Key: Keyable + 'key>(
+		&'g self,
 		key: Key,
-	) -> LockGuard<'key, L::Guard<'a>, Key> {
+	) -> LockGuard<'key, L::Guard<'g>, Key> {
 		let guard = unsafe {
 			// safety: we have the thread key
 			self.raw_lock();
@@ -306,10 +306,10 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// };
 	///
 	/// ```
-	pub fn try_lock<'key: 'a, Key: Keyable + 'key>(
-		&'a self,
+	pub fn try_lock<'g, 'key: 'a, Key: Keyable + 'key>(
+		&'g self,
 		key: Key,
-	) -> Result<LockGuard<'key, L::Guard<'a>, Key>, Key> {
+	) -> Result<LockGuard<'key, L::Guard<'g>, Key>, Key> {
 		let guard = unsafe {
 			if !self.raw_try_lock() {
 				return Err(key);
@@ -345,7 +345,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// let key = RefLockCollection::<(Mutex<i32>, Mutex<&str>)>::unlock(guard);
 	/// ```
 	#[allow(clippy::missing_const_for_fn)]
-	pub fn unlock<'key: 'a, Key: Keyable + 'key>(guard: LockGuard<'key, L::Guard<'a>, Key>) -> Key {
+	pub fn unlock<'g, 'key, Key: Keyable + 'key>(guard: LockGuard<'key, L::Guard<'g>, Key>) -> Key {
 		drop(guard.guard);
 		guard.key
 	}
@@ -372,10 +372,10 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 	/// assert_eq!(*guard.0, 0);
 	/// assert_eq!(*guard.1, "");
 	/// ```
-	pub fn read<'key: 'a, Key: Keyable + 'key>(
-		&'a self,
+	pub fn read<'g, 'key: 'g, Key: Keyable + 'key>(
+		&'g self,
 		key: Key,
-	) -> LockGuard<'key, L::ReadGuard<'a>, Key> {
+	) -> LockGuard<'key, L::ReadGuard<'g>, Key> {
 		unsafe {
 			// safety: we have the thread key
 			self.raw_read();
@@ -420,10 +420,10 @@ impl<'a, L: Sharable> RefLockCollection<'a, L> {
 	/// };
 	///
 	/// ```
-	pub fn try_read<'key: 'a, Key: Keyable + 'key>(
-		&'a self,
+	pub fn try_read<'g, 'key: 'g, Key: Keyable + 'key>(
+		&'g self,
 		key: Key,
-	) -> Option<LockGuard<'key, L::ReadGuard<'a>, Key>> {
+	) -> Option<LockGuard<'key, L::ReadGuard<'g>, Key>> {
 		let guard = unsafe {
 			// safety: we have the thread key
 			if !self.raw_try_read() {

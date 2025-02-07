@@ -55,7 +55,7 @@ pub struct PoisonRef<'a, G> {
 /// An RAII guard for a [`Poisonable`].
 ///
 /// This is created by calling methods like [`Poisonable::lock`].
-pub struct PoisonGuard<'a, 'key, G, Key> {
+pub struct PoisonGuard<'a, 'key: 'a, G, Key: 'key> {
 	guard: PoisonRef<'a, G>,
 	key: Key,
 	_phantom: PhantomData<&'key ()>,
@@ -69,7 +69,7 @@ pub struct PoisonError<Guard> {
 /// An enumeration of possible errors associated with
 /// [`TryLockPoisonableResult`] which can occur while trying to acquire a lock
 /// (i.e.: [`Poisonable::try_lock`]).
-pub enum TryLockPoisonableError<'flag, 'key, G, Key: 'key> {
+pub enum TryLockPoisonableError<'flag, 'key: 'flag, G, Key: 'key> {
 	Poisoned(PoisonError<PoisonGuard<'flag, 'key, G, Key>>),
 	WouldBlock(Key),
 }
@@ -94,6 +94,8 @@ pub type TryLockPoisonableResult<'flag, 'key, G, Key> =
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
+
 	use super::*;
 	use crate::lockable::Lockable;
 	use crate::{LockCollection, Mutex, ThreadKey};
@@ -120,8 +122,8 @@ mod tests {
 		let guard1 = guard.0.as_ref().unwrap();
 		let guard2 = guard.1.as_ref().unwrap();
 		let guard3 = guard.2.as_ref().unwrap();
-		assert!(guard1 < guard2);
-		assert!(guard2 > guard1);
+		assert_eq!(guard1.cmp(guard2), std::cmp::Ordering::Less);
+		assert_eq!(guard2.cmp(guard1), std::cmp::Ordering::Greater);
 		assert!(guard2 == guard3);
 		assert!(guard1 != guard3);
 	}
@@ -135,6 +137,80 @@ mod tests {
 
 		assert_eq!(lock_ptrs.len(), 1);
 		assert!(std::ptr::addr_eq(lock_ptrs[0], &poisonable.inner));
+	}
+
+	#[test]
+	fn clear_poison_for_poisoned_mutex() {
+		let mutex = Arc::new(Poisonable::new(Mutex::new(0)));
+		let c_mutex = Arc::clone(&mutex);
+
+		let _ = std::thread::spawn(move || {
+			let key = ThreadKey::get().unwrap();
+			let _lock = c_mutex.lock(key).unwrap();
+			panic!(); // the mutex gets poisoned
+		})
+		.join();
+
+		assert!(mutex.is_poisoned());
+
+		let key = ThreadKey::get().unwrap();
+		let _ = mutex.lock(key).unwrap_or_else(|mut e| {
+			**e.get_mut() = 1;
+			mutex.clear_poison();
+			e.into_inner()
+		});
+
+		assert!(!mutex.is_poisoned());
+	}
+
+	#[test]
+	fn error_as_ref() {
+		let mutex = Poisonable::new(Mutex::new("foo"));
+
+		let _ = std::panic::catch_unwind(|| {
+			let key = ThreadKey::get().unwrap();
+			#[allow(unused_variables)]
+			let guard = mutex.lock(key);
+			panic!();
+
+			#[allow(unknown_lints)]
+			#[allow(unreachable_code)]
+			drop(guard);
+		});
+
+		assert!(mutex.is_poisoned());
+
+		let key = ThreadKey::get().unwrap();
+		let error = mutex.lock(key).unwrap_err();
+		assert_eq!(&***error.as_ref(), "foo");
+	}
+
+	#[test]
+	fn error_as_mut() {
+		let mutex = Poisonable::new(Mutex::new("foo"));
+
+		let _ = std::panic::catch_unwind(|| {
+			let key = ThreadKey::get().unwrap();
+			#[allow(unused_variables)]
+			let guard = mutex.lock(key);
+			panic!();
+
+			#[allow(unknown_lints)]
+			#[allow(unreachable_code)]
+			drop(guard);
+		});
+
+		assert!(mutex.is_poisoned());
+
+		let mut key = ThreadKey::get().unwrap();
+		let mut error = mutex.lock(&mut key).unwrap_err();
+		let error1 = error.as_mut();
+		**error1 = "bar";
+		drop(error);
+
+		mutex.clear_poison();
+		let guard = mutex.lock(&mut key).unwrap();
+		assert_eq!(&**guard, "bar");
 	}
 
 	#[test]

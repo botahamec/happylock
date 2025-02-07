@@ -109,7 +109,7 @@ pub unsafe fn attempt_to_recover_reads_from_panic(locked: &[&dyn RawLock]) {
 	handle_unwind(
 		|| {
 			// safety: the caller assumes these are already locked
-			locked.iter().for_each(|lock| lock.raw_unlock());
+			locked.iter().for_each(|lock| lock.raw_unlock_read());
 		},
 		// if we get another panic in here, we'll just have to poison what remains
 		|| locked.iter().for_each(|l| l.poison()),

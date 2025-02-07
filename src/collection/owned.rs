@@ -197,7 +197,7 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 	/// *guard.0 += 1;
 	/// *guard.1 = "1";
 	/// ```
-	pub fn lock<'g, 'key, Key: Keyable + 'key>(
+	pub fn lock<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::Guard<'g>, Key> {
@@ -315,7 +315,7 @@ impl<L: Sharable> OwnedLockCollection<L> {
 	/// assert_eq!(*guard.0, 0);
 	/// assert_eq!(*guard.1, "");
 	/// ```
-	pub fn read<'g, 'key, Key: Keyable + 'key>(
+	pub fn read<'g, 'key: 'g, Key: Keyable + 'key>(
 		&'g self,
 		key: Key,
 	) -> LockGuard<'key, L::ReadGuard<'g>, Key> {
