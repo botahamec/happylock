@@ -1,0 +1,382 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in library 'happylock'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--lib",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "happylock",
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'basic'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=basic",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "basic",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'basic'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=basic",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "basic",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'dining_philosophers'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=dining_philosophers",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "dining_philosophers",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'dining_philosophers'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=dining_philosophers",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "dining_philosophers",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'dining_philosophers_retry'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=dining_philosophers_retry",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "dining_philosophers_retry",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'dining_philosophers_retry'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=dining_philosophers_retry",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "dining_philosophers_retry",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'double_mutex'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=double_mutex",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "double_mutex",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'double_mutex'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=double_mutex",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "double_mutex",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'fibonacci'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=fibonacci",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "fibonacci",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'fibonacci'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=fibonacci",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "fibonacci",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'list'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=list",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "list",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'list'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=list",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "list",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'evil_mutex'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=evil_mutex",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "evil_mutex",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'evil_rwlock'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=evil_rwlock",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "evil_rwlock",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'evil_try_mutex'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=evil_try_mutex",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "evil_try_mutex",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'evil_try_rwlock'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=evil_try_rwlock",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "evil_try_rwlock",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'evil_unlock_mutex'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=evil_unlock_mutex",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "evil_unlock_mutex",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'evil_unlock_rwlock'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=evil_unlock_rwlock",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "evil_unlock_rwlock",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'retry'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=retry",
+					"--package=happylock"
+				],
+				"filter": {
+					"name": "retry",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		}
+	]
+}

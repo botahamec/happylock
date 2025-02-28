@@ -1,7 +1,35 @@
 use std::cell::Cell;
 
 use crate::handle_unwind::handle_unwind;
-use crate::lockable::RawLock;
+use crate::lockable::{Lockable, RawLock};
+
+#[must_use]
+pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
+	let mut locks = Vec::new();
+	data.get_ptrs(&mut locks);
+	locks.sort_by_key(|lock| &raw const **lock);
+	locks
+}
+
+#[must_use]
+pub fn get_locks_unsorted<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
+	let mut locks = Vec::new();
+	data.get_ptrs(&mut locks);
+	locks
+}
+
+/// returns `true` if the sorted list contains a duplicate
+#[must_use]
+pub fn ordered_contains_duplicates(l: &[&dyn RawLock]) -> bool {
+	if l.is_empty() {
+		// Return early to prevent panic in the below call to `windows`
+		return false;
+	}
+
+	l.windows(2)
+		// NOTE: addr_eq is necessary because eq would also compare the v-table pointers
+		.any(|window| std::ptr::addr_eq(window[0], window[1]))
+}
 
 /// Lock a set of locks in the given order. It's UB to call this without a `ThreadKey`
 pub unsafe fn ordered_lock(locks: &[&dyn RawLock]) {
@@ -114,4 +142,14 @@ pub unsafe fn attempt_to_recover_reads_from_panic(locked: &[&dyn RawLock]) {
 		// if we get another panic in here, we'll just have to poison what remains
 		|| locked.iter().for_each(|l| l.poison()),
 	)
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::collection::utils::ordered_contains_duplicates;
+
+	#[test]
+	fn empty_array_does_not_contain_duplicates() {
+		assert!(!ordered_contains_duplicates(&[]))
+	}
 }

@@ -5,11 +5,13 @@ use happylock::mutex::Mutex;
 use happylock::ThreadKey;
 use lock_api::{GuardNoSend, RawMutex};
 
-struct EvilMutex {
+struct KindaEvilMutex {
 	inner: parking_lot::RawMutex,
 }
 
-unsafe impl RawMutex for EvilMutex {
+struct EvilMutex {}
+
+unsafe impl RawMutex for KindaEvilMutex {
 	#[allow(clippy::declare_interior_mutable_const)]
 	const INIT: Self = Self {
 		inner: parking_lot::RawMutex::INIT,
@@ -18,7 +20,7 @@ unsafe impl RawMutex for EvilMutex {
 	type GuardMarker = GuardNoSend;
 
 	fn lock(&self) {
-		panic!("mwahahahaha");
+		self.inner.lock()
 	}
 
 	fn try_lock(&self) -> bool {
@@ -30,13 +32,32 @@ unsafe impl RawMutex for EvilMutex {
 	}
 }
 
+unsafe impl RawMutex for EvilMutex {
+	#[allow(clippy::declare_interior_mutable_const)]
+	const INIT: Self = Self {};
+
+	type GuardMarker = GuardNoSend;
+
+	fn lock(&self) {
+		panic!("mwahahahaha");
+	}
+
+	fn try_lock(&self) -> bool {
+		panic!("mwahahahaha")
+	}
+
+	unsafe fn unlock(&self) {
+		panic!("mwahahahaha");
+	}
+}
+
 #[test]
 fn boxed_mutexes() {
 	let mut key = ThreadKey::get().unwrap();
-	let good_mutex: Arc<Mutex<i32, parking_lot::RawMutex>> = Arc::new(Mutex::new(5));
+	let kinda_evil_mutex: Arc<Mutex<i32, KindaEvilMutex>> = Arc::new(Mutex::new(5));
 	let evil_mutex: Arc<Mutex<i32, EvilMutex>> = Arc::new(Mutex::new(7));
 	let useless_mutex: Arc<Mutex<i32, parking_lot::RawMutex>> = Arc::new(Mutex::new(10));
-	let c_good = Arc::clone(&good_mutex);
+	let c_good = Arc::clone(&kinda_evil_mutex);
 	let c_evil = Arc::clone(&evil_mutex);
 	let c_useless = Arc::clone(&useless_mutex);
 
@@ -48,7 +69,7 @@ fn boxed_mutexes() {
 	.join();
 
 	assert!(r.is_err());
-	assert!(good_mutex.scoped_try_lock(&mut key, |_| {}).is_ok());
+	assert!(kinda_evil_mutex.scoped_try_lock(&mut key, |_| {}).is_err());
 	assert!(evil_mutex.scoped_try_lock(&mut key, |_| {}).is_err());
 	assert!(useless_mutex.scoped_try_lock(&mut key, |_| {}).is_ok());
 }
@@ -56,10 +77,10 @@ fn boxed_mutexes() {
 #[test]
 fn retrying_mutexes() {
 	let mut key = ThreadKey::get().unwrap();
-	let good_mutex: Arc<Mutex<i32, parking_lot::RawMutex>> = Arc::new(Mutex::new(5));
+	let kinda_evil_mutex: Arc<Mutex<i32, KindaEvilMutex>> = Arc::new(Mutex::new(5));
 	let evil_mutex: Arc<Mutex<i32, EvilMutex>> = Arc::new(Mutex::new(7));
 	let useless_mutex: Arc<Mutex<i32, parking_lot::RawMutex>> = Arc::new(Mutex::new(10));
-	let c_good = Arc::clone(&good_mutex);
+	let c_good = Arc::clone(&kinda_evil_mutex);
 	let c_evil = Arc::clone(&evil_mutex);
 	let c_useless = Arc::clone(&useless_mutex);
 
@@ -72,7 +93,7 @@ fn retrying_mutexes() {
 	.join();
 
 	assert!(r.is_err());
-	assert!(good_mutex.scoped_try_lock(&mut key, |_| {}).is_ok());
+	assert!(kinda_evil_mutex.scoped_try_lock(&mut key, |_| {}).is_err());
 	assert!(evil_mutex.scoped_try_lock(&mut key, |_| {}).is_err());
 	assert!(useless_mutex.scoped_try_lock(&mut key, |_| {}).is_ok());
 }

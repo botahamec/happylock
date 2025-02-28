@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use lock_api::RawRwLock;
 
-use crate::key::Keyable;
 use crate::lockable::{Lockable, RawLock, Sharable};
+use crate::ThreadKey;
 
 use super::{ReadLock, RwLock, RwLockReadGuard, RwLockReadRef};
 
@@ -13,12 +13,21 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R>
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= &'a T
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self.as_ref());
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		RwLockReadRef::new(self.as_ref())
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		self.0.data_ref()
 	}
 }
 
@@ -28,8 +37,17 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R>
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= &'a T
+	where
+		Self: 'a;
+
 	unsafe fn read_guard(&self) -> Self::Guard<'_> {
 		RwLockReadRef::new(self.as_ref())
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		self.0.data_ref()
 	}
 }
 
@@ -117,10 +135,8 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	/// ```
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
-		&'s self,
-		key: Key,
-	) -> RwLockReadGuard<'s, 'key, T, Key, R> {
+	#[must_use]
+	pub fn lock(&self, key: ThreadKey) -> RwLockReadGuard<'_, T, R> {
 		self.0.read(key)
 	}
 
@@ -155,10 +171,7 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	///     Err(_) => unreachable!(),
 	/// };
 	/// ```
-	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
-		&'s self,
-		key: Key,
-	) -> Result<RwLockReadGuard<'s, 'key, T, Key, R>, Key> {
+	pub fn try_lock(&self, key: ThreadKey) -> Result<RwLockReadGuard<'_, T, R>, ThreadKey> {
 		self.0.try_read(key)
 	}
 
@@ -189,7 +202,8 @@ impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
 	/// assert_eq!(*guard, 0);
 	/// let key = ReadLock::unlock(guard);
 	/// ```
-	pub fn unlock<'key, Key: Keyable + 'key>(guard: RwLockReadGuard<'_, 'key, T, Key, R>) -> Key {
+	#[must_use]
+	pub fn unlock(guard: RwLockReadGuard<'_, T, R>) -> ThreadKey {
 		RwLock::unlock_read(guard)
 	}
 }

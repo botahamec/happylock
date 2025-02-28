@@ -1,7 +1,6 @@
 use std::cell::UnsafeCell;
-use std::marker::PhantomData;
 
-use crate::{key::Keyable, lockable::RawLock};
+use crate::{lockable::RawLock, ThreadKey};
 
 mod boxed;
 mod guard;
@@ -122,8 +121,7 @@ pub struct RetryingLockCollection<L> {
 /// A RAII guard for a generic [`Lockable`] type.
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
-pub struct LockGuard<'key, Guard, Key: Keyable + 'key> {
+pub struct LockGuard<Guard> {
 	guard: Guard,
-	key: Key,
-	_phantom: PhantomData<&'key ()>,
+	key: ThreadKey,
 }

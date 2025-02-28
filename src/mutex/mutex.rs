@@ -6,9 +6,9 @@ use std::panic::AssertUnwindSafe;
 use lock_api::RawMutex;
 
 use crate::handle_unwind::handle_unwind;
-use crate::key::Keyable;
 use crate::lockable::{Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock};
 use crate::poisonable::PoisonFlag;
+use crate::{Keyable, ThreadKey};
 
 use super::{Mutex, MutexGuard, MutexRef};
 
@@ -62,12 +62,21 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= &'a mut T
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		MutexRef::new(self)
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		self.data.get().as_mut().unwrap_unchecked()
 	}
 }
 
@@ -214,6 +223,46 @@ impl<T: ?Sized, R> Mutex<T, R> {
 }
 
 impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
+	pub fn scoped_lock<Ret>(&self, key: impl Keyable, f: impl FnOnce(&mut T) -> Ret) -> Ret {
+		unsafe {
+			// safety: we have the thread key
+			self.raw_lock();
+
+			// safety: the mutex was just locked
+			let r = f(self.data.get().as_mut().unwrap_unchecked());
+
+			// safety: we locked the mutex already
+			self.raw_unlock();
+
+			drop(key); // ensures we drop the key in the correct place
+
+			r
+		}
+	}
+
+	pub fn scoped_try_lock<Key: Keyable, Ret>(
+		&self,
+		key: Key,
+		f: impl FnOnce(&mut T) -> Ret,
+	) -> Result<Ret, Key> {
+		unsafe {
+			// safety: we have the thread key
+			if !self.raw_try_lock() {
+				return Err(key);
+			}
+
+			// safety: the mutex was just locked
+			let r = f(self.data.get().as_mut().unwrap_unchecked());
+
+			// safety: we locked the mutex already
+			self.raw_unlock();
+
+			drop(key); // ensures we drop the key in the correct place
+
+			Ok(r)
+		}
+	}
+
 	/// Block the thread until this mutex can be locked, and lock it.
 	///
 	/// Upon returning, the thread is the only thread with a lock on the
@@ -237,7 +286,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn lock<'s, 'k: 's, Key: Keyable>(&'s self, key: Key) -> MutexGuard<'s, 'k, T, Key, R> {
+	pub fn lock(&self, key: ThreadKey) -> MutexGuard<'_, T, R> {
 		unsafe {
 			// safety: we have the thread key
 			self.raw_lock();
@@ -280,10 +329,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
 	/// ```
-	pub fn try_lock<'s, 'k: 's, Key: Keyable>(
-		&'s self,
-		key: Key,
-	) -> Result<MutexGuard<'s, 'k, T, Key, R>, Key> {
+	pub fn try_lock(&self, key: ThreadKey) -> Result<MutexGuard<'_, T, R>, ThreadKey> {
 		unsafe {
 			// safety: we have the key to the mutex
 			if self.raw_try_lock() {
@@ -322,7 +368,8 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	///
 	/// let key = Mutex::unlock(guard);
 	/// ```
-	pub fn unlock<'a, 'k: 'a, Key: Keyable + 'k>(guard: MutexGuard<'a, 'k, T, Key, R>) -> Key {
+	#[must_use]
+	pub fn unlock(guard: MutexGuard<'_, T, R>) -> ThreadKey {
 		unsafe {
 			guard.mutex.0.raw_unlock();
 		}

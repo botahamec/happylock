@@ -111,6 +111,10 @@ pub unsafe trait Lockable {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+	where
+		Self: 'a;
+
 	/// Yields a list of references to the [`RawLock`]s contained within this
 	/// value.
 	///
@@ -129,6 +133,9 @@ pub unsafe trait Lockable {
 	/// unlocked until this guard is dropped.
 	#[must_use]
 	unsafe fn guard(&self) -> Self::Guard<'_>;
+
+	#[must_use]
+	unsafe fn data_mut(&self) -> Self::DataMut<'_>;
 }
 
 /// Allows a lock to be accessed by multiple readers.
@@ -145,6 +152,10 @@ pub unsafe trait Sharable: Lockable {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+	where
+		Self: 'a;
+
 	/// Returns a guard that can be used to immutably access the underlying
 	/// data.
 	///
@@ -155,6 +166,9 @@ pub unsafe trait Sharable: Lockable {
 	/// unlocked until this guard is dropped.
 	#[must_use]
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
+
+	#[must_use]
+	unsafe fn data_ref(&self) -> Self::DataRef<'_>;
 }
 
 /// A type that may be locked and unlocked, and is known to be the only valid
@@ -210,12 +224,21 @@ unsafe impl<T: Lockable> Lockable for &T {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= T::DataMut<'a>
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		(*self).get_ptrs(ptrs);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(*self).guard()
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		(*self).data_mut()
 	}
 }
 
@@ -225,8 +248,17 @@ unsafe impl<T: Sharable> Sharable for &T {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= T::DataRef<'a>
+	where
+		Self: 'a;
+
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		(*self).read_guard()
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		(*self).data_ref()
 	}
 }
 
@@ -236,12 +268,21 @@ unsafe impl<T: Lockable> Lockable for &mut T {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= T::DataMut<'a>
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		(**self).get_ptrs(ptrs)
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		(**self).guard()
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		(**self).data_mut()
 	}
 }
 
@@ -262,8 +303,17 @@ unsafe impl<T: Sharable> Sharable for &mut T {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= T::DataRef<'a>
+	where
+		Self: 'a;
+
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		(**self).read_guard()
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		(**self).data_ref()
 	}
 }
 
@@ -276,6 +326,8 @@ macro_rules! tuple_impls {
 		unsafe impl<$($generic: Lockable,)*> Lockable for ($($generic,)*) {
 			type Guard<'g> = ($($generic::Guard<'g>,)*) where Self: 'g;
 
+			type DataMut<'a> = ($($generic::DataMut<'a>,)*) where Self: 'a;
+
 			fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 				$(self.$value.get_ptrs(ptrs));*
 			}
@@ -284,6 +336,10 @@ macro_rules! tuple_impls {
 				// It's weird that this works
 				// I don't think any other way of doing it compiles
 				($(self.$value.guard(),)*)
+			}
+
+			unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+				($(self.$value.data_mut(),)*)
 			}
 		}
 
@@ -306,8 +362,14 @@ macro_rules! tuple_impls {
 		unsafe impl<$($generic: Sharable,)*> Sharable for ($($generic,)*) {
 			type ReadGuard<'g> = ($($generic::ReadGuard<'g>,)*) where Self: 'g;
 
+			type DataRef<'a> = ($($generic::DataRef<'a>,)*) where Self: 'a;
+
 			unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 				($(self.$value.read_guard(),)*)
+			}
+
+			unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+				($(self.$value.data_ref(),)*)
 			}
 		}
 
@@ -329,6 +391,11 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= [T::DataMut<'a>; N]
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
@@ -341,6 +408,15 @@ unsafe impl<T: Lockable, const N: usize> Lockable for [T; N] {
 		let mut guards = MaybeUninit::<[MaybeUninit<T::Guard<'g>>; N]>::uninit().assume_init();
 		for i in 0..N {
 			guards[i].write(self[i].guard());
+		}
+
+		guards.map(|g| g.assume_init())
+	}
+
+	unsafe fn data_mut<'a>(&'a self) -> Self::DataMut<'a> {
+		let mut guards = MaybeUninit::<[MaybeUninit<T::DataMut<'a>>; N]>::uninit().assume_init();
+		for i in 0..N {
+			guards[i].write(self[i].data_mut());
 		}
 
 		guards.map(|g| g.assume_init())
@@ -386,10 +462,24 @@ unsafe impl<T: Sharable, const N: usize> Sharable for [T; N] {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= [T::DataRef<'a>; N]
+	where
+		Self: 'a;
+
 	unsafe fn read_guard<'g>(&'g self) -> Self::ReadGuard<'g> {
 		let mut guards = MaybeUninit::<[MaybeUninit<T::ReadGuard<'g>>; N]>::uninit().assume_init();
 		for i in 0..N {
 			guards[i].write(self[i].read_guard());
+		}
+
+		guards.map(|g| g.assume_init())
+	}
+
+	unsafe fn data_ref<'a>(&'a self) -> Self::DataRef<'a> {
+		let mut guards = MaybeUninit::<[MaybeUninit<T::DataRef<'a>>; N]>::uninit().assume_init();
+		for i in 0..N {
+			guards[i].write(self[i].data_ref());
 		}
 
 		guards.map(|g| g.assume_init())
@@ -404,6 +494,11 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= Box<[T::DataMut<'a>]>
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
@@ -412,6 +507,10 @@ unsafe impl<T: Lockable> Lockable for Box<[T]> {
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		self.iter().map(|lock| lock.guard()).collect()
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		self.iter().map(|lock| lock.data_mut()).collect()
 	}
 }
 
@@ -432,8 +531,17 @@ unsafe impl<T: Sharable> Sharable for Box<[T]> {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= Box<[T::DataRef<'a>]>
+	where
+		Self: 'a;
+
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		self.iter().map(|lock| lock.read_guard()).collect()
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		self.iter().map(|lock| lock.data_ref()).collect()
 	}
 }
 
@@ -443,8 +551,17 @@ unsafe impl<T: Sharable> Sharable for Vec<T> {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= Box<[T::DataRef<'a>]>
+	where
+		Self: 'a;
+
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		self.iter().map(|lock| lock.read_guard()).collect()
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		self.iter().map(|lock| lock.data_ref()).collect()
 	}
 }
 
@@ -457,6 +574,11 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= Box<[T::DataMut<'a>]>
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		for lock in self {
 			lock.get_ptrs(ptrs);
@@ -465,6 +587,10 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		self.iter().map(|lock| lock.guard()).collect()
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		self.iter().map(|lock| lock.data_mut()).collect()
 	}
 }
 

@@ -3,8 +3,6 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use crate::Keyable;
-
 use super::{PoisonFlag, PoisonGuard, PoisonRef};
 
 impl<'a, Guard> PoisonRef<'a, Guard> {
@@ -25,26 +23,6 @@ impl<Guard> Drop for PoisonRef<'_, Guard> {
 		if std::thread::panicking() {
 			self.flag.poison();
 		}
-	}
-}
-
-impl<Guard: PartialEq> PartialEq for PoisonRef<'_, Guard> {
-	fn eq(&self, other: &Self) -> bool {
-		self.guard.eq(&other.guard)
-	}
-}
-
-impl<Guard: PartialOrd> PartialOrd for PoisonRef<'_, Guard> {
-	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-		self.guard.partial_cmp(&other.guard)
-	}
-}
-
-impl<Guard: Eq> Eq for PoisonRef<'_, Guard> {}
-
-impl<Guard: Ord> Ord for PoisonRef<'_, Guard> {
-	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-		self.guard.cmp(&other.guard)
 	}
 }
 
@@ -96,37 +74,9 @@ impl<Guard> AsMut<Guard> for PoisonRef<'_, Guard> {
 	}
 }
 
-#[mutants::skip] // it's hard to get two guards safely
-#[cfg(not(tarpaulin_include))]
-impl<Guard: PartialEq, Key: Keyable> PartialEq for PoisonGuard<'_, '_, Guard, Key> {
-	fn eq(&self, other: &Self) -> bool {
-		self.guard.eq(&other.guard)
-	}
-}
-
-#[mutants::skip] // it's hard to get two guards safely
-#[cfg(not(tarpaulin_include))]
-impl<Guard: PartialOrd, Key: Keyable> PartialOrd for PoisonGuard<'_, '_, Guard, Key> {
-	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-		self.guard.partial_cmp(&other.guard)
-	}
-}
-
-#[mutants::skip] // it's hard to get two guards safely
-#[cfg(not(tarpaulin_include))]
-impl<Guard: Eq, Key: Keyable> Eq for PoisonGuard<'_, '_, Guard, Key> {}
-
-#[mutants::skip] // it's hard to get two guards safely
-#[cfg(not(tarpaulin_include))]
-impl<Guard: Ord, Key: Keyable> Ord for PoisonGuard<'_, '_, Guard, Key> {
-	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-		self.guard.cmp(&other.guard)
-	}
-}
-
 #[mutants::skip] // hashing involves RNG and is hard to test
 #[cfg(not(tarpaulin_include))]
-impl<Guard: Hash, Key: Keyable> Hash for PoisonGuard<'_, '_, Guard, Key> {
+impl<Guard: Hash> Hash for PoisonGuard<'_, Guard> {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		self.guard.hash(state)
 	}
@@ -134,19 +84,19 @@ impl<Guard: Hash, Key: Keyable> Hash for PoisonGuard<'_, '_, Guard, Key> {
 
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
-impl<Guard: Debug, Key: Keyable> Debug for PoisonGuard<'_, '_, Guard, Key> {
+impl<Guard: Debug> Debug for PoisonGuard<'_, Guard> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Debug::fmt(&self.guard, f)
 	}
 }
 
-impl<Guard: Display, Key: Keyable> Display for PoisonGuard<'_, '_, Guard, Key> {
+impl<Guard: Display> Display for PoisonGuard<'_, Guard> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		Display::fmt(&self.guard, f)
 	}
 }
 
-impl<T, Guard: Deref<Target = T>, Key: Keyable> Deref for PoisonGuard<'_, '_, Guard, Key> {
+impl<T, Guard: Deref<Target = T>> Deref for PoisonGuard<'_, Guard> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -155,20 +105,20 @@ impl<T, Guard: Deref<Target = T>, Key: Keyable> Deref for PoisonGuard<'_, '_, Gu
 	}
 }
 
-impl<T, Guard: DerefMut<Target = T>, Key: Keyable> DerefMut for PoisonGuard<'_, '_, Guard, Key> {
+impl<T, Guard: DerefMut<Target = T>> DerefMut for PoisonGuard<'_, Guard> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		#[allow(clippy::explicit_auto_deref)] // fixing this results in a compiler error
 		&mut *self.guard.guard
 	}
 }
 
-impl<Guard, Key: Keyable> AsRef<Guard> for PoisonGuard<'_, '_, Guard, Key> {
+impl<Guard> AsRef<Guard> for PoisonGuard<'_, Guard> {
 	fn as_ref(&self) -> &Guard {
 		&self.guard.guard
 	}
 }
 
-impl<Guard, Key: Keyable> AsMut<Guard> for PoisonGuard<'_, '_, Guard, Key> {
+impl<Guard> AsMut<Guard> for PoisonGuard<'_, Guard> {
 	fn as_mut(&mut self) -> &mut Guard {
 		&mut self.guard.guard
 	}

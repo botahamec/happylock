@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use lock_api::RawRwLock;
 
-use crate::key::Keyable;
 use crate::lockable::{Lockable, RawLock};
+use crate::ThreadKey;
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
 
@@ -13,12 +13,21 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= &'a mut T
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		ptrs.push(self.as_ref());
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
 		RwLockWriteRef::new(self.as_ref())
+	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		self.0.data_mut()
 	}
 }
 
@@ -108,10 +117,8 @@ impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	/// ```
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	pub fn lock<'s, 'key: 's, Key: Keyable + 'key>(
-		&'s self,
-		key: Key,
-	) -> RwLockWriteGuard<'s, 'key, T, Key, R> {
+	#[must_use]
+	pub fn lock(&self, key: ThreadKey) -> RwLockWriteGuard<'_, T, R> {
 		self.0.write(key)
 	}
 
@@ -145,10 +152,7 @@ impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	///     Err(_) => unreachable!(),
 	/// };
 	/// ```
-	pub fn try_lock<'s, 'key: 's, Key: Keyable + 'key>(
-		&'s self,
-		key: Key,
-	) -> Result<RwLockWriteGuard<'s, 'key, T, Key, R>, Key> {
+	pub fn try_lock(&self, key: ThreadKey) -> Result<RwLockWriteGuard<'_, T, R>, ThreadKey> {
 		self.0.try_write(key)
 	}
 
@@ -176,7 +180,8 @@ impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
 	/// *guard += 20;
 	/// let key = WriteLock::unlock(guard);
 	/// ```
-	pub fn unlock<'key, Key: Keyable + 'key>(guard: RwLockWriteGuard<'_, 'key, T, Key, R>) -> Key {
+	#[must_use]
+	pub fn unlock(guard: RwLockWriteGuard<'_, T, R>) -> ThreadKey {
 		RwLock::unlock_write(guard)
 	}
 }

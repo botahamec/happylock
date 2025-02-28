@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 
 use lock_api::RawMutex;
 
-use crate::key::Keyable;
 use crate::poisonable::PoisonFlag;
+use crate::ThreadKey;
 
 mod guard;
 mod mutex;
@@ -87,20 +87,19 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 ///         let mut key = ThreadKey::get().unwrap();
 ///
 ///         // Here we use a block to limit the lifetime of the lock guard.
-///         let result = {
-///             let mut data = data_mutex_clone.lock(&mut key);
+///         let result = data_mutex_clone.scoped_lock(&mut key, |data| {
 ///             let result = data.iter().fold(0, |acc, x| acc + x * 2);
 ///             data.push(result);
 ///             result
 ///             // The mutex guard gets dropped here, so the lock is released
-///         };
+///         });
 ///         // The thread key is available again
 ///         *res_mutex_clone.lock(key) += result;
 ///     }));
 /// });
 ///
-/// let mut key = ThreadKey::get().unwrap();
-/// let mut data = data_mutex.lock(&mut key);
+/// let key = ThreadKey::get().unwrap();
+/// let mut data = data_mutex.lock(key);
 /// let result = data.iter().fold(0, |acc, x| acc + x * 2);
 /// data.push(result);
 ///
@@ -108,12 +107,12 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 /// // allows other threads to start working on the data immediately. Dropping
 /// // the data also gives us access to the thread key, so we can lock
 /// // another mutex.
-/// drop(data);
+/// let key = Mutex::unlock(data);
 ///
 /// // Here the mutex guard is not assigned to a variable and so, even if the
 /// // scope does not end after this line, the mutex is still released: there is
 /// // no deadlock.
-/// *res_mutex.lock(&mut key) += result;
+/// *res_mutex.lock(key) += result;
 ///
 /// threads.into_iter().for_each(|thread| {
 ///     thread
@@ -121,6 +120,7 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 ///         .expect("The thread creating or execution failed !")
 /// });
 ///
+/// let key = ThreadKey::get().unwrap();
 /// assert_eq!(*res_mutex.lock(key), 800);
 /// ```
 ///
@@ -153,10 +153,9 @@ pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
 //
 // This is the most lifetime-intensive thing I've ever written. Can I graduate
 // from borrow checker university now?
-pub struct MutexGuard<'a, 'key: 'a, T: ?Sized + 'a, Key: Keyable + 'key, R: RawMutex> {
+pub struct MutexGuard<'a, T: ?Sized + 'a, R: RawMutex> {
 	mutex: MutexRef<'a, T, R>, // this way we don't need to re-implement Drop
-	thread_key: Key,
-	_phantom: PhantomData<&'key ()>,
+	thread_key: ThreadKey,
 }
 
 #[cfg(test)]
@@ -194,61 +193,46 @@ mod tests {
 	#[test]
 	fn display_works_for_ref() {
 		let mutex: crate::Mutex<_> = Mutex::new("Hello, world!");
-		let guard = unsafe { mutex.try_lock_no_key().unwrap() }; // TODO lock_no_key
+		let guard = unsafe { mutex.try_lock_no_key().unwrap() };
 		assert_eq!(guard.to_string(), "Hello, world!".to_string());
 	}
 
 	#[test]
-	fn ord_works() {
-		let key = ThreadKey::get().unwrap();
-		let mutex1: crate::Mutex<_> = Mutex::new(1);
-		let mutex2: crate::Mutex<_> = Mutex::new(2);
-		let mutex3: crate::Mutex<_> = Mutex::new(2);
-		let collection = LockCollection::try_new((&mutex1, &mutex2, &mutex3)).unwrap();
-
-		let guard = collection.lock(key);
-		assert!(guard.0 < guard.1);
-		assert!(guard.1 > guard.0);
-		assert!(guard.1 == guard.2);
-		assert!(guard.0 != guard.2)
-	}
-
-	#[test]
 	fn ref_as_mut() {
-		let mut key = ThreadKey::get().unwrap();
+		let key = ThreadKey::get().unwrap();
 		let collection = LockCollection::new(crate::Mutex::new(0));
-		let mut guard = collection.lock(&mut key);
+		let mut guard = collection.lock(key);
 		let guard_mut = guard.as_mut().as_mut();
 
 		*guard_mut = 3;
-		drop(guard);
+		let key = LockCollection::<crate::Mutex<_>>::unlock(guard);
 
-		let guard = collection.lock(&mut key);
+		let guard = collection.lock(key);
 
 		assert_eq!(guard.as_ref().as_ref(), &3);
 	}
 
 	#[test]
 	fn guard_as_mut() {
-		let mut key = ThreadKey::get().unwrap();
+		let key = ThreadKey::get().unwrap();
 		let mutex = crate::Mutex::new(0);
-		let mut guard = mutex.lock(&mut key);
+		let mut guard = mutex.lock(key);
 		let guard_mut = guard.as_mut();
 
 		*guard_mut = 3;
-		drop(guard);
+		let key = Mutex::unlock(guard);
 
-		let guard = mutex.lock(&mut key);
+		let guard = mutex.lock(key);
 
 		assert_eq!(guard.as_ref(), &3);
 	}
 
 	#[test]
 	fn dropping_guard_releases_mutex() {
-		let mut key = ThreadKey::get().unwrap();
+		let key = ThreadKey::get().unwrap();
 		let mutex: crate::Mutex<_> = Mutex::new("Hello, world!");
 
-		let guard = mutex.lock(&mut key);
+		let guard = mutex.lock(key);
 		drop(guard);
 
 		assert!(!mutex.is_locked());

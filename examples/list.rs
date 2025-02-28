@@ -16,13 +16,14 @@ static DATA: [Mutex<usize>; 6] = [
 static SEED: Mutex<u32> = Mutex::new(42);
 
 fn random(key: &mut ThreadKey) -> usize {
-	let mut seed = SEED.lock(key);
-	let x = *seed;
-	let x = x ^ (x << 13);
-	let x = x ^ (x >> 17);
-	let x = x ^ (x << 5);
-	*seed = x;
-	x as usize
+	SEED.scoped_lock(key, |seed| {
+		let x = *seed;
+		let x = x ^ (x << 13);
+		let x = x ^ (x >> 17);
+		let x = x ^ (x << 5);
+		*seed = x;
+		x as usize
+	})
 }
 
 fn main() {
@@ -40,7 +41,7 @@ fn main() {
 				let Some(lock) = RefLockCollection::try_new(&data) else {
 					continue;
 				};
-				let mut guard = lock.lock(&mut key);
+				let mut guard = lock.lock(key);
 				*guard[0] += *guard[1];
 				*guard[1] += *guard[2];
 				*guard[2] += *guard[0];

@@ -109,7 +109,7 @@ impl<Guard> PoisonError<Guard> {
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let p_err = mutex.lock(key).unwrap_err();
-	/// let data: &PoisonGuard<_, _> = p_err.get_ref();
+	/// let data: &PoisonGuard<_> = p_err.get_ref();
 	/// println!("recovered {} items", data.len());
 	/// ```
 	#[must_use]
@@ -154,7 +154,7 @@ impl<Guard> PoisonError<Guard> {
 
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
-impl<G, Key> fmt::Debug for TryLockPoisonableError<'_, '_, G, Key> {
+impl<G> fmt::Debug for TryLockPoisonableError<'_, G> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
 			Self::Poisoned(..) => "Poisoned(..)".fmt(f),
@@ -163,7 +163,7 @@ impl<G, Key> fmt::Debug for TryLockPoisonableError<'_, '_, G, Key> {
 	}
 }
 
-impl<G, Key> fmt::Display for TryLockPoisonableError<'_, '_, G, Key> {
+impl<G> fmt::Display for TryLockPoisonableError<'_, G> {
 	#[cfg_attr(test, mutants::skip)]
 	#[cfg(not(tarpaulin_include))]
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -175,12 +175,10 @@ impl<G, Key> fmt::Display for TryLockPoisonableError<'_, '_, G, Key> {
 	}
 }
 
-impl<G, Key> Error for TryLockPoisonableError<'_, '_, G, Key> {}
+impl<G> Error for TryLockPoisonableError<'_, G> {}
 
-impl<'flag, 'key, G, Key> From<PoisonError<PoisonGuard<'flag, 'key, G, Key>>>
-	for TryLockPoisonableError<'flag, 'key, G, Key>
-{
-	fn from(value: PoisonError<PoisonGuard<'flag, 'key, G, Key>>) -> Self {
+impl<'flag, G> From<PoisonError<PoisonGuard<'flag, G>>> for TryLockPoisonableError<'flag, G> {
+	fn from(value: PoisonError<PoisonGuard<'flag, G>>) -> Self {
 		Self::Poisoned(value)
 	}
 }

@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 
 use lock_api::RawRwLock;
 
-use crate::key::Keyable;
 use crate::poisonable::PoisonFlag;
+use crate::ThreadKey;
 
 mod rwlock;
 
@@ -95,10 +95,9 @@ pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
 ///
 /// [`read`]: `RwLock::read`
 /// [`try_read`]: `RwLock::try_read`
-pub struct RwLockReadGuard<'a, 'key: 'a, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
+pub struct RwLockReadGuard<'a, T: ?Sized, R: RawRwLock> {
 	rwlock: RwLockReadRef<'a, T, R>,
-	thread_key: Key,
-	_phantom: PhantomData<&'key ()>,
+	thread_key: ThreadKey,
 }
 
 /// RAII structure used to release the exclusive write access of a lock when
@@ -108,16 +107,14 @@ pub struct RwLockReadGuard<'a, 'key: 'a, T: ?Sized, Key: Keyable + 'key, R: RawR
 /// [`RwLock`]
 ///
 /// [`try_write`]: `RwLock::try_write`
-pub struct RwLockWriteGuard<'a, 'key: 'a, T: ?Sized, Key: Keyable + 'key, R: RawRwLock> {
+pub struct RwLockWriteGuard<'a, T: ?Sized, R: RawRwLock> {
 	rwlock: RwLockWriteRef<'a, T, R>,
-	thread_key: Key,
-	_phantom: PhantomData<&'key ()>,
+	thread_key: ThreadKey,
 }
 
 #[cfg(test)]
 mod tests {
 	use crate::lockable::Lockable;
-	use crate::LockCollection;
 	use crate::RwLock;
 	use crate::ThreadKey;
 
@@ -139,6 +136,16 @@ mod tests {
 		let reader = ReadLock::new(&lock);
 
 		assert!(reader.try_lock(key).is_ok());
+	}
+
+	#[test]
+	fn read_lock_from_works() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::from("Hello, world!");
+		let reader = ReadLock::from(&lock);
+
+		let guard = reader.lock(key);
+		assert_eq!(*guard, "Hello, world!");
 	}
 
 	#[test]
@@ -235,21 +242,6 @@ mod tests {
 	}
 
 	#[test]
-	fn write_ord() {
-		let key = ThreadKey::get().unwrap();
-		let lock1: crate::RwLock<_> = RwLock::new(1);
-		let lock2: crate::RwLock<_> = RwLock::new(5);
-		let lock3: crate::RwLock<_> = RwLock::new(5);
-		let collection = LockCollection::try_new((&lock1, &lock2, &lock3)).unwrap();
-		let guard = collection.lock(key);
-
-		assert!(guard.0 < guard.1);
-		assert!(guard.1 > guard.0);
-		assert!(guard.1 == guard.2);
-		assert!(guard.0 != guard.2);
-	}
-
-	#[test]
 	fn read_ref_display_works() {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 		let guard = unsafe { lock.try_read_no_key().unwrap() };
@@ -264,21 +256,6 @@ mod tests {
 	}
 
 	#[test]
-	fn read_ord() {
-		let key = ThreadKey::get().unwrap();
-		let lock1: crate::RwLock<_> = RwLock::new(1);
-		let lock2: crate::RwLock<_> = RwLock::new(5);
-		let lock3: crate::RwLock<_> = RwLock::new(5);
-		let collection = LockCollection::try_new((&lock1, &lock2, &lock3)).unwrap();
-		let guard = collection.read(key);
-
-		assert!(guard.0 < guard.1);
-		assert!(guard.1 > guard.0);
-		assert!(guard.1 == guard.2);
-		assert!(guard.0 != guard.2);
-	}
-
-	#[test]
 	fn dropping_read_ref_releases_rwlock() {
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 
@@ -290,10 +267,10 @@ mod tests {
 
 	#[test]
 	fn dropping_write_guard_releases_rwlock() {
-		let mut key = ThreadKey::get().unwrap();
+		let key = ThreadKey::get().unwrap();
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 
-		let guard = lock.write(&mut key);
+		let guard = lock.write(key);
 		drop(guard);
 
 		assert!(!lock.is_locked());

@@ -18,27 +18,27 @@ unsafe impl RawRwLock for EvilRwLock {
 	type GuardMarker = GuardNoSend;
 
 	fn lock_shared(&self) {
-		panic!("mwahahahaha");
+		self.inner.lock_shared()
 	}
 
 	fn try_lock_shared(&self) -> bool {
-		self.inner.try_lock_shared()
+		panic!("mwahahahaha")
 	}
 
 	unsafe fn unlock_shared(&self) {
-		panic!("mwahahahaha");
+		self.inner.unlock_shared()
 	}
 
 	fn lock_exclusive(&self) {
-		panic!("mwahahahaha");
+		self.inner.lock_exclusive()
 	}
 
 	fn try_lock_exclusive(&self) -> bool {
-		self.inner.try_lock_exclusive()
+		panic!("mwahahahaha")
 	}
 
 	unsafe fn unlock_exclusive(&self) {
-		panic!("mwahahahaha");
+		self.inner.unlock_exclusive()
 	}
 }
 
@@ -55,14 +55,14 @@ fn boxed_rwlocks() {
 	let r = std::thread::spawn(move || {
 		let key = ThreadKey::get().unwrap();
 		let collection = BoxedLockCollection::try_new((&*c_good, &*c_evil, &*c_useless)).unwrap();
-		_ = collection.lock(key);
+		let _ = collection.try_read(key);
 	})
 	.join();
 
 	assert!(r.is_err());
-	assert!(good_mutex.scoped_try_write(&mut key, |_| {}).is_ok());
-	assert!(evil_mutex.scoped_try_write(&mut key, |_| {}).is_err());
-	assert!(useless_mutex.scoped_try_write(&mut key, |_| {}).is_ok());
+	assert!(good_mutex.scoped_try_read(&mut key, |_| {}).is_ok());
+	assert!(evil_mutex.scoped_try_read(&mut key, |_| {}).is_err());
+	assert!(useless_mutex.scoped_try_read(&mut key, |_| {}).is_ok());
 }
 
 #[test]
@@ -79,12 +79,12 @@ fn retrying_rwlocks() {
 		let key = ThreadKey::get().unwrap();
 		let collection =
 			RetryingLockCollection::try_new((&*c_good, &*c_evil, &*c_useless)).unwrap();
-		collection.lock(key);
+		_ = collection.try_read(key);
 	})
 	.join();
 
 	assert!(r.is_err());
-	assert!(good_mutex.scoped_try_write(&mut key, |_| {}).is_ok());
-	assert!(evil_mutex.scoped_try_write(&mut key, |_| {}).is_err());
-	assert!(useless_mutex.scoped_try_write(&mut key, |_| {}).is_ok());
+	assert!(good_mutex.scoped_try_read(&mut key, |_| {}).is_ok());
+	assert!(evil_mutex.scoped_try_read(&mut key, |_| {}).is_err());
+	assert!(useless_mutex.scoped_try_read(&mut key, |_| {}).is_ok());
 }

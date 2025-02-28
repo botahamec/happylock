@@ -1,10 +1,9 @@
-use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use crate::lockable::{
 	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
-use crate::Keyable;
+use crate::{Keyable, ThreadKey};
 
 use super::{
 	PoisonError, PoisonFlag, PoisonGuard, PoisonRef, PoisonResult, Poisonable,
@@ -49,6 +48,11 @@ unsafe impl<L: Lockable> Lockable for Poisonable<L> {
 	where
 		Self: 'g;
 
+	type DataMut<'a>
+		= PoisonResult<L::DataMut<'a>>
+	where
+		Self: 'a;
+
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
 		self.inner.get_ptrs(ptrs)
 	}
@@ -62,6 +66,14 @@ unsafe impl<L: Lockable> Lockable for Poisonable<L> {
 			Ok(ref_guard)
 		}
 	}
+
+	unsafe fn data_mut(&self) -> Self::DataMut<'_> {
+		if self.is_poisoned() {
+			Err(PoisonError::new(self.inner.data_mut()))
+		} else {
+			Ok(self.inner.data_mut())
+		}
+	}
 }
 
 unsafe impl<L: Sharable> Sharable for Poisonable<L> {
@@ -70,6 +82,11 @@ unsafe impl<L: Sharable> Sharable for Poisonable<L> {
 	where
 		Self: 'g;
 
+	type DataRef<'a>
+		= PoisonResult<L::DataRef<'a>>
+	where
+		Self: 'a;
+
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
 		let ref_guard = PoisonRef::new(&self.poisoned, self.inner.read_guard());
 
@@ -77,6 +94,14 @@ unsafe impl<L: Sharable> Sharable for Poisonable<L> {
 			Err(PoisonError::new(ref_guard))
 		} else {
 			Ok(ref_guard)
+		}
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		if self.is_poisoned() {
+			Err(PoisonError::new(self.inner.data_ref()))
+		} else {
+			Ok(self.inner.data_ref())
 		}
 	}
 }
@@ -266,14 +291,10 @@ impl<L> Poisonable<L> {
 
 impl<L: Lockable> Poisonable<L> {
 	/// Creates a guard for the poisonable, without locking it
-	unsafe fn guard<'flag, 'key, Key: Keyable + 'key>(
-		&'flag self,
-		key: Key,
-	) -> PoisonResult<PoisonGuard<'flag, 'key, L::Guard<'flag>, Key>> {
+	unsafe fn guard(&self, key: ThreadKey) -> PoisonResult<PoisonGuard<'_, L::Guard<'_>>> {
 		let guard = PoisonGuard {
 			guard: PoisonRef::new(&self.poisoned, self.inner.guard()),
 			key,
-			_phantom: PhantomData,
 		};
 
 		if self.is_poisoned() {
@@ -285,6 +306,50 @@ impl<L: Lockable> Poisonable<L> {
 }
 
 impl<L: Lockable + RawLock> Poisonable<L> {
+	pub fn scoped_lock<'a, R>(
+		&'a self,
+		key: impl Keyable,
+		f: impl Fn(<Self as Lockable>::DataMut<'a>) -> R,
+	) -> R {
+		unsafe {
+			// safety: we have the thread key
+			self.raw_lock();
+
+			// safety: the data was just locked
+			let r = f(self.data_mut());
+
+			// safety: the collection is still locked
+			self.raw_unlock();
+
+			drop(key); // ensure the key stays alive long enough
+
+			r
+		}
+	}
+
+	pub fn scoped_try_lock<'a, Key: Keyable, R>(
+		&'a self,
+		key: Key,
+		f: impl Fn(<Self as Lockable>::DataMut<'a>) -> R,
+	) -> Result<R, Key> {
+		unsafe {
+			// safety: we have the thread key
+			if !self.raw_try_lock() {
+				return Err(key);
+			}
+
+			// safety: we just locked the collection
+			let r = f(self.data_mut());
+
+			// safety: the collection is still locked
+			self.raw_unlock();
+
+			drop(key); // ensures the key stays valid long enough
+
+			Ok(r)
+		}
+	}
+
 	/// Acquires the lock, blocking the current thread until it is ok to do so.
 	///
 	/// This function will block the current thread until it is available to
@@ -316,10 +381,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
 	/// ```
-	pub fn lock<'flag, 'key, Key: Keyable + 'key>(
-		&'flag self,
-		key: Key,
-	) -> PoisonResult<PoisonGuard<'flag, 'key, L::Guard<'flag>, Key>> {
+	pub fn lock(&self, key: ThreadKey) -> PoisonResult<PoisonGuard<'_, L::Guard<'_>>> {
 		unsafe {
 			self.inner.raw_lock();
 			self.guard(key)
@@ -370,10 +432,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// [`Poisoned`]: `TryLockPoisonableError::Poisoned`
 	/// [`WouldBlock`]: `TryLockPoisonableError::WouldBlock`
-	pub fn try_lock<'flag, 'key, Key: Keyable + 'key>(
-		&'flag self,
-		key: Key,
-	) -> TryLockPoisonableResult<'flag, 'key, L::Guard<'flag>, Key> {
+	pub fn try_lock(&self, key: ThreadKey) -> TryLockPoisonableResult<'_, L::Guard<'_>> {
 		unsafe {
 			if self.inner.raw_try_lock() {
 				Ok(self.guard(key)?)
@@ -398,23 +457,17 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// let key = Poisonable::<Mutex<_>>::unlock(guard);
 	/// ```
-	pub fn unlock<'flag, 'key, Key: Keyable + 'key>(
-		guard: PoisonGuard<'flag, 'key, L::Guard<'flag>, Key>,
-	) -> Key {
+	pub fn unlock<'flag>(guard: PoisonGuard<'flag, L::Guard<'flag>>) -> ThreadKey {
 		drop(guard.guard);
 		guard.key
 	}
 }
 
 impl<L: Sharable + RawLock> Poisonable<L> {
-	unsafe fn read_guard<'flag, 'key, Key: Keyable + 'key>(
-		&'flag self,
-		key: Key,
-	) -> PoisonResult<PoisonGuard<'flag, 'key, L::ReadGuard<'flag>, Key>> {
+	unsafe fn read_guard(&self, key: ThreadKey) -> PoisonResult<PoisonGuard<'_, L::ReadGuard<'_>>> {
 		let guard = PoisonGuard {
 			guard: PoisonRef::new(&self.poisoned, self.inner.read_guard()),
 			key,
-			_phantom: PhantomData,
 		};
 
 		if self.is_poisoned() {
@@ -422,6 +475,50 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 		}
 
 		Ok(guard)
+	}
+
+	pub fn scoped_read<'a, R>(
+		&'a self,
+		key: impl Keyable,
+		f: impl Fn(<Self as Sharable>::DataRef<'a>) -> R,
+	) -> R {
+		unsafe {
+			// safety: we have the thread key
+			self.raw_read();
+
+			// safety: the data was just locked
+			let r = f(self.data_ref());
+
+			// safety: the collection is still locked
+			self.raw_unlock_read();
+
+			drop(key); // ensure the key stays alive long enough
+
+			r
+		}
+	}
+
+	pub fn scoped_try_read<'a, Key: Keyable, R>(
+		&'a self,
+		key: Key,
+		f: impl Fn(<Self as Sharable>::DataRef<'a>) -> R,
+	) -> Result<R, Key> {
+		unsafe {
+			// safety: we have the thread key
+			if !self.raw_try_read() {
+				return Err(key);
+			}
+
+			// safety: we just locked the collection
+			let r = f(self.data_ref());
+
+			// safety: the collection is still locked
+			self.raw_unlock_read();
+
+			drop(key); // ensures the key stays valid long enough
+
+			Ok(r)
+		}
 	}
 
 	/// Locks with shared read access, blocking the current thread until it can
@@ -457,10 +554,7 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	///     assert!(c_lock.read(key).is_ok());
 	/// }).join().expect("thread::spawn failed");
 	/// ```
-	pub fn read<'flag, 'key, Key: Keyable + 'key>(
-		&'flag self,
-		key: Key,
-	) -> PoisonResult<PoisonGuard<'flag, 'key, L::ReadGuard<'flag>, Key>> {
+	pub fn read(&self, key: ThreadKey) -> PoisonResult<PoisonGuard<'_, L::ReadGuard<'_>>> {
 		unsafe {
 			self.inner.raw_read();
 			self.read_guard(key)
@@ -504,10 +598,7 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	///
 	/// [`Poisoned`]: `TryLockPoisonableError::Poisoned`
 	/// [`WouldBlock`]: `TryLockPoisonableError::WouldBlock`
-	pub fn try_read<'flag, 'key, Key: Keyable + 'key>(
-		&'flag self,
-		key: Key,
-	) -> TryLockPoisonableResult<'flag, 'key, L::ReadGuard<'flag>, Key> {
+	pub fn try_read(&self, key: ThreadKey) -> TryLockPoisonableResult<'_, L::ReadGuard<'_>> {
 		unsafe {
 			if self.inner.raw_try_read() {
 				Ok(self.read_guard(key)?)
@@ -530,9 +621,7 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	/// let mut guard = lock.read(key).unwrap();
 	/// let key = Poisonable::<RwLock<_>>::unlock_read(guard);
 	/// ```
-	pub fn unlock_read<'flag, 'key, Key: Keyable + 'key>(
-		guard: PoisonGuard<'flag, 'key, L::ReadGuard<'flag>, Key>,
-	) -> Key {
+	pub fn unlock_read<'flag>(guard: PoisonGuard<'flag, L::ReadGuard<'flag>>) -> ThreadKey {
 		drop(guard.guard);
 		guard.key
 	}

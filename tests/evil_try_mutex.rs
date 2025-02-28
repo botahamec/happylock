@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use happylock::collection::{BoxedLockCollection, RetryingLockCollection};
-use happylock::mutex::Mutex;
-use happylock::ThreadKey;
+use happylock::{
+	collection::{BoxedLockCollection, RetryingLockCollection},
+	mutex::Mutex,
+	ThreadKey,
+};
 use lock_api::{GuardNoSend, RawMutex};
 
 struct EvilMutex {
@@ -18,15 +20,15 @@ unsafe impl RawMutex for EvilMutex {
 	type GuardMarker = GuardNoSend;
 
 	fn lock(&self) {
-		panic!("mwahahahaha");
+		self.inner.lock()
 	}
 
 	fn try_lock(&self) -> bool {
-		self.inner.try_lock()
+		panic!("mwahahahaha");
 	}
 
 	unsafe fn unlock(&self) {
-		panic!("mwahahahaha");
+		self.inner.unlock()
 	}
 }
 
@@ -43,7 +45,8 @@ fn boxed_mutexes() {
 	let r = std::thread::spawn(move || {
 		let key = ThreadKey::get().unwrap();
 		let collection = BoxedLockCollection::try_new((&*c_good, &*c_evil, &*c_useless)).unwrap();
-		_ = collection.lock(key);
+		let g = collection.try_lock(key);
+		println!("{}", g.unwrap().1);
 	})
 	.join();
 
@@ -67,7 +70,7 @@ fn retrying_mutexes() {
 		let key = ThreadKey::get().unwrap();
 		let collection =
 			RetryingLockCollection::try_new((&*c_good, &*c_evil, &*c_useless)).unwrap();
-		collection.lock(key);
+		let _ = collection.try_lock(key);
 	})
 	.join();
 
