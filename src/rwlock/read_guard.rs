@@ -64,7 +64,7 @@ impl<'a, T: ?Sized, R: RawRwLock> RwLockReadRef<'a, T, R> {
 	/// Creates an immutable reference for the underlying data of an [`RwLock`]
 	/// without locking it or taking ownership of the key.
 	#[must_use]
-	pub(crate) unsafe fn new(mutex: &'a RwLock<T, R>) -> Self {
+	pub(crate) const unsafe fn new(mutex: &'a RwLock<T, R>) -> Self {
 		Self(mutex, PhantomData)
 	}
 }
@@ -109,7 +109,7 @@ impl<'a, T: ?Sized, R: RawRwLock> RwLockReadGuard<'a, T, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
 	#[must_use]
-	pub(super) unsafe fn new(rwlock: &'a RwLock<T, R>, thread_key: ThreadKey) -> Self {
+	pub(super) const unsafe fn new(rwlock: &'a RwLock<T, R>, thread_key: ThreadKey) -> Self {
 		Self {
 			rwlock: RwLockReadRef(rwlock, PhantomData),
 			thread_key,

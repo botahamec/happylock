@@ -3,11 +3,41 @@ use std::fmt::Debug;
 use lock_api::RawRwLock;
 
 use crate::lockable::{Lockable, RawLock};
-use crate::ThreadKey;
+use crate::{Keyable, ThreadKey};
 
 use super::{RwLock, RwLockWriteGuard, RwLockWriteRef, WriteLock};
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R> {
+unsafe impl<T, R: RawRwLock> RawLock for WriteLock<'_, T, R> {
+	fn poison(&self) {
+		self.0.poison()
+	}
+
+	unsafe fn raw_write(&self) {
+		self.0.raw_write()
+	}
+
+	unsafe fn raw_try_write(&self) -> bool {
+		self.0.raw_try_write()
+	}
+
+	unsafe fn raw_unlock_write(&self) {
+		self.0.raw_unlock_write()
+	}
+
+	unsafe fn raw_read(&self) {
+		self.0.raw_write()
+	}
+
+	unsafe fn raw_try_read(&self) -> bool {
+		self.0.raw_try_write()
+	}
+
+	unsafe fn raw_unlock_read(&self) {
+		self.0.raw_unlock_write()
+	}
+}
+
+unsafe impl<T, R: RawRwLock> Lockable for WriteLock<'_, T, R> {
 	type Guard<'g>
 		= RwLockWriteRef<'g, T, R>
 	where
@@ -19,7 +49,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self.as_ref());
+		ptrs.push(self)
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
@@ -36,7 +66,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for WriteLock<'_, T, R
 
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
-impl<T: ?Sized + Debug, R: RawRwLock> Debug for WriteLock<'_, T, R> {
+impl<T: Debug, R: RawRwLock> Debug for WriteLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -89,7 +119,19 @@ impl<'l, T, R> WriteLock<'l, T, R> {
 	}
 }
 
-impl<T: ?Sized, R: RawRwLock> WriteLock<'_, T, R> {
+impl<T, R: RawRwLock> WriteLock<'_, T, R> {
+	pub fn scoped_lock<'a, Ret>(&'a self, key: impl Keyable, f: impl Fn(&'a mut T) -> Ret) -> Ret {
+		self.0.scoped_write(key, f)
+	}
+
+	pub fn scoped_try_lock<'a, Key: Keyable, Ret>(
+		&'a self,
+		key: Key,
+		f: impl Fn(&'a mut T) -> Ret,
+	) -> Result<Ret, Key> {
+		self.0.scoped_try_write(key, f)
+	}
+
 	/// Locks the underlying [`RwLock`] with exclusive write access, blocking
 	/// the current until it can be acquired.
 	///

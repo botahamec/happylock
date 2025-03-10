@@ -5,6 +5,7 @@ use std::panic::AssertUnwindSafe;
 
 use lock_api::RawMutex;
 
+use crate::collection::utils;
 use crate::handle_unwind::handle_unwind;
 use crate::lockable::{Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock};
 use crate::poisonable::PoisonFlag;
@@ -17,7 +18,7 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 		self.poison.poison();
 	}
 
-	unsafe fn raw_lock(&self) {
+	unsafe fn raw_write(&self) {
 		assert!(!self.poison.is_poisoned(), "The mutex has been killed");
 
 		// if the closure unwraps, then the mutex will be killed
@@ -25,7 +26,7 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 		handle_unwind(|| this.raw.lock(), || self.poison())
 	}
 
-	unsafe fn raw_try_lock(&self) -> bool {
+	unsafe fn raw_try_write(&self) -> bool {
 		if self.poison.is_poisoned() {
 			return false;
 		}
@@ -35,7 +36,7 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 		handle_unwind(|| this.raw.try_lock(), || self.poison())
 	}
 
-	unsafe fn raw_unlock(&self) {
+	unsafe fn raw_unlock_write(&self) {
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
 		handle_unwind(|| this.raw.unlock(), || self.poison())
@@ -43,20 +44,26 @@ unsafe impl<T: ?Sized, R: RawMutex> RawLock for Mutex<T, R> {
 
 	// this is the closest thing to a read we can get, but Sharable isn't
 	// implemented for this
+	#[mutants::skip]
+	#[cfg(not(tarpaulin_include))]
 	unsafe fn raw_read(&self) {
-		self.raw_lock()
+		self.raw_write()
 	}
 
+	#[mutants::skip]
+	#[cfg(not(tarpaulin_include))]
 	unsafe fn raw_try_read(&self) -> bool {
-		self.raw_try_lock()
+		self.raw_try_write()
 	}
 
+	#[mutants::skip]
+	#[cfg(not(tarpaulin_include))]
 	unsafe fn raw_unlock_read(&self) {
-		self.raw_unlock()
+		self.raw_unlock_write()
 	}
 }
 
-unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
+unsafe impl<T, R: RawMutex> Lockable for Mutex<T, R> {
 	type Guard<'g>
 		= MutexRef<'g, T, R>
 	where
@@ -80,7 +87,7 @@ unsafe impl<T: Send, R: RawMutex + Send + Sync> Lockable for Mutex<T, R> {
 	}
 }
 
-impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
+impl<T: Send, R: RawMutex> LockableIntoInner for Mutex<T, R> {
 	type Inner = T;
 
 	fn into_inner(self) -> Self::Inner {
@@ -88,7 +95,7 @@ impl<T: Send, R: RawMutex + Send + Sync> LockableIntoInner for Mutex<T, R> {
 	}
 }
 
-impl<T: Send, R: RawMutex + Send + Sync> LockableGetMut for Mutex<T, R> {
+impl<T: Send, R: RawMutex> LockableGetMut for Mutex<T, R> {
 	type Inner<'a>
 		= &'a mut T
 	where
@@ -99,7 +106,7 @@ impl<T: Send, R: RawMutex + Send + Sync> LockableGetMut for Mutex<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawMutex + Send + Sync> OwnedLockable for Mutex<T, R> {}
+unsafe impl<T: Send, R: RawMutex> OwnedLockable for Mutex<T, R> {}
 
 impl<T, R: RawMutex> Mutex<T, R> {
 	/// Create a new unlocked `Mutex`.
@@ -140,7 +147,7 @@ impl<T, R: RawMutex> Mutex<T, R> {
 
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
-impl<T: ?Sized + Debug, R: RawMutex> Debug for Mutex<T, R> {
+impl<T: Debug, R: RawMutex> Debug for Mutex<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -222,45 +229,21 @@ impl<T: ?Sized, R> Mutex<T, R> {
 	}
 }
 
-impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
-	pub fn scoped_lock<Ret>(&self, key: impl Keyable, f: impl FnOnce(&mut T) -> Ret) -> Ret {
-		unsafe {
-			// safety: we have the thread key
-			self.raw_lock();
-
-			// safety: the mutex was just locked
-			let r = f(self.data.get().as_mut().unwrap_unchecked());
-
-			// safety: we locked the mutex already
-			self.raw_unlock();
-
-			drop(key); // ensures we drop the key in the correct place
-
-			r
-		}
+impl<T, R: RawMutex> Mutex<T, R> {
+	pub fn scoped_lock<'a, Ret>(
+		&'a self,
+		key: impl Keyable,
+		f: impl FnOnce(&'a mut T) -> Ret,
+	) -> Ret {
+		utils::scoped_write(self, key, f)
 	}
 
-	pub fn scoped_try_lock<Key: Keyable, Ret>(
-		&self,
+	pub fn scoped_try_lock<'a, Key: Keyable, Ret>(
+		&'a self,
 		key: Key,
-		f: impl FnOnce(&mut T) -> Ret,
+		f: impl FnOnce(&'a mut T) -> Ret,
 	) -> Result<Ret, Key> {
-		unsafe {
-			// safety: we have the thread key
-			if !self.raw_try_lock() {
-				return Err(key);
-			}
-
-			// safety: the mutex was just locked
-			let r = f(self.data.get().as_mut().unwrap_unchecked());
-
-			// safety: we locked the mutex already
-			self.raw_unlock();
-
-			drop(key); // ensures we drop the key in the correct place
-
-			Ok(r)
-		}
+		utils::scoped_try_write(self, key, f)
 	}
 
 	/// Block the thread until this mutex can be locked, and lock it.
@@ -289,7 +272,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	pub fn lock(&self, key: ThreadKey) -> MutexGuard<'_, T, R> {
 		unsafe {
 			// safety: we have the thread key
-			self.raw_lock();
+			self.raw_write();
 
 			// safety: we just locked the mutex
 			MutexGuard::new(self, key)
@@ -332,7 +315,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	pub fn try_lock(&self, key: ThreadKey) -> Result<MutexGuard<'_, T, R>, ThreadKey> {
 		unsafe {
 			// safety: we have the key to the mutex
-			if self.raw_try_lock() {
+			if self.raw_try_write() {
 				// safety: we just locked the mutex
 				Ok(MutexGuard::new(self, key))
 			} else {
@@ -350,7 +333,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// Lock without a [`ThreadKey`]. It is undefined behavior to do this without
 	/// owning the [`ThreadKey`].
 	pub(crate) unsafe fn try_lock_no_key(&self) -> Option<MutexRef<'_, T, R>> {
-		self.raw_try_lock().then_some(MutexRef(self, PhantomData))
+		self.raw_try_write().then_some(MutexRef(self, PhantomData))
 	}
 
 	/// Consumes the [`MutexGuard`], and consequently unlocks its `Mutex`.
@@ -370,9 +353,7 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// ```
 	#[must_use]
 	pub fn unlock(guard: MutexGuard<'_, T, R>) -> ThreadKey {
-		unsafe {
-			guard.mutex.0.raw_unlock();
-		}
+		drop(guard.mutex);
 		guard.thread_key
 	}
 }

@@ -3,11 +3,41 @@ use std::fmt::Debug;
 use lock_api::RawRwLock;
 
 use crate::lockable::{Lockable, RawLock, Sharable};
-use crate::ThreadKey;
+use crate::{Keyable, ThreadKey};
 
 use super::{ReadLock, RwLock, RwLockReadGuard, RwLockReadRef};
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R> {
+unsafe impl<T, R: RawRwLock> RawLock for ReadLock<'_, T, R> {
+	fn poison(&self) {
+		self.0.poison()
+	}
+
+	unsafe fn raw_write(&self) {
+		self.0.raw_read()
+	}
+
+	unsafe fn raw_try_write(&self) -> bool {
+		self.0.raw_try_read()
+	}
+
+	unsafe fn raw_unlock_write(&self) {
+		self.0.raw_unlock_read()
+	}
+
+	unsafe fn raw_read(&self) {
+		self.0.raw_read()
+	}
+
+	unsafe fn raw_try_read(&self) -> bool {
+		self.0.raw_try_read()
+	}
+
+	unsafe fn raw_unlock_read(&self) {
+		self.0.raw_unlock_read()
+	}
+}
+
+unsafe impl<T, R: RawRwLock> Lockable for ReadLock<'_, T, R> {
 	type Guard<'g>
 		= RwLockReadRef<'g, T, R>
 	where
@@ -19,7 +49,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R>
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self.as_ref());
+		ptrs.push(self);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
@@ -31,7 +61,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for ReadLock<'_, T, R>
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R> {
+unsafe impl<T, R: RawRwLock> Sharable for ReadLock<'_, T, R> {
 	type ReadGuard<'g>
 		= RwLockReadRef<'g, T, R>
 	where
@@ -53,7 +83,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for ReadLock<'_, T, R>
 
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
-impl<T: ?Sized + Debug, R: RawRwLock> Debug for ReadLock<'_, T, R> {
+impl<T: Debug, R: RawRwLock> Debug for ReadLock<'_, T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -104,7 +134,19 @@ impl<'l, T, R> ReadLock<'l, T, R> {
 	}
 }
 
-impl<T: ?Sized, R: RawRwLock> ReadLock<'_, T, R> {
+impl<T, R: RawRwLock> ReadLock<'_, T, R> {
+	pub fn scoped_lock<'a, Ret>(&'a self, key: impl Keyable, f: impl Fn(&'a T) -> Ret) -> Ret {
+		self.0.scoped_read(key, f)
+	}
+
+	pub fn scoped_try_lock<'a, Key: Keyable, Ret>(
+		&'a self,
+		key: Key,
+		f: impl Fn(&'a T) -> Ret,
+	) -> Result<Ret, Key> {
+		self.0.scoped_try_read(key, f)
+	}
+
 	/// Locks the underlying [`RwLock`] with shared read access, blocking the
 	/// current thread until it can be acquired.
 	///

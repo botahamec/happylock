@@ -136,10 +136,7 @@ pub struct Mutex<T: ?Sized, R> {
 /// A reference to a mutex that unlocks it when dropped.
 ///
 /// This is similar to [`MutexGuard`], except it does not hold a [`Keyable`].
-pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(
-	&'a Mutex<T, R>,
-	PhantomData<(&'a mut T, R::GuardMarker)>,
-);
+pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(&'a Mutex<T, R>, PhantomData<R::GuardMarker>);
 
 /// An RAII implementation of a “scoped lock” of a mutex.
 ///
@@ -180,6 +177,26 @@ mod tests {
 
 		assert!(lock.is_locked());
 		drop(guard)
+	}
+
+	#[test]
+	fn from_works() {
+		let key = ThreadKey::get().unwrap();
+		let mutex: crate::Mutex<_> = Mutex::from("Hello, world!");
+
+		let guard = mutex.lock(key);
+		assert_eq!(*guard, "Hello, world!");
+	}
+
+	#[test]
+	fn as_mut_works() {
+		let key = ThreadKey::get().unwrap();
+		let mut mutex = crate::Mutex::from(42);
+
+		let mut_ref = mutex.as_mut();
+		*mut_ref = 24;
+
+		mutex.scoped_lock(key, |guard| assert_eq!(*guard, 24))
 	}
 
 	#[test]

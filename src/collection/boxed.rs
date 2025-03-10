@@ -4,7 +4,9 @@ use std::fmt::Debug;
 use crate::lockable::{Lockable, LockableIntoInner, OwnedLockable, RawLock, Sharable};
 use crate::{Keyable, ThreadKey};
 
-use super::utils::ordered_contains_duplicates;
+use super::utils::{
+	ordered_contains_duplicates, scoped_read, scoped_try_read, scoped_try_write, scoped_write,
+};
 use super::{utils, BoxedLockCollection, LockGuard};
 
 unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
@@ -16,18 +18,18 @@ unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 		}
 	}
 
-	unsafe fn raw_lock(&self) {
-		utils::ordered_lock(self.locks())
+	unsafe fn raw_write(&self) {
+		utils::ordered_write(self.locks())
 	}
 
-	unsafe fn raw_try_lock(&self) -> bool {
+	unsafe fn raw_try_write(&self) -> bool {
 		println!("{}", self.locks().len());
-		utils::ordered_try_lock(self.locks())
+		utils::ordered_try_write(self.locks())
 	}
 
-	unsafe fn raw_unlock(&self) {
+	unsafe fn raw_unlock_write(&self) {
 		for lock in self.locks() {
-			lock.raw_unlock();
+			lock.raw_unlock_write();
 		}
 	}
 
@@ -58,7 +60,7 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.extend(self.locks())
+		ptrs.push(self);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
@@ -156,7 +158,7 @@ impl<L> Drop for BoxedLockCollection<L> {
 	}
 }
 
-impl<T, L: AsRef<T>> AsRef<T> for BoxedLockCollection<L> {
+impl<T: ?Sized, L: AsRef<T>> AsRef<T> for BoxedLockCollection<L> {
 	fn as_ref(&self) -> &T {
 		self.child().as_ref()
 	}
@@ -364,44 +366,16 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		}
 	}
 
-	pub fn scoped_lock<R>(&self, key: impl Keyable, f: impl Fn(L::DataMut<'_>) -> R) -> R {
-		unsafe {
-			// safety: we have the thread key
-			self.raw_lock();
-
-			// safety: the data was just locked
-			let r = f(self.data_mut());
-
-			// safety: the collection is still locked
-			self.raw_unlock();
-
-			drop(key); // ensure the key stays alive long enough
-
-			r
-		}
+	pub fn scoped_lock<'a, R>(&'a self, key: impl Keyable, f: impl Fn(L::DataMut<'a>) -> R) -> R {
+		scoped_write(self, key, f)
 	}
 
-	pub fn scoped_try_lock<Key: Keyable, R>(
-		&self,
+	pub fn scoped_try_lock<'a, Key: Keyable, R>(
+		&'a self,
 		key: Key,
-		f: impl Fn(L::DataMut<'_>) -> R,
+		f: impl Fn(L::DataMut<'a>) -> R,
 	) -> Result<R, Key> {
-		unsafe {
-			// safety: we have the thread key
-			if !self.raw_try_lock() {
-				return Err(key);
-			}
-
-			// safety: we just locked the collection
-			let r = f(self.data_mut());
-
-			// safety: the collection is still locked
-			self.raw_unlock();
-
-			drop(key); // ensures the key stays valid long enough
-
-			Ok(r)
-		}
+		scoped_try_write(self, key, f)
 	}
 
 	/// Locks the collection
@@ -427,7 +401,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 	pub fn lock(&self, key: ThreadKey) -> LockGuard<L::Guard<'_>> {
 		unsafe {
 			// safety: we have the thread key
-			self.raw_lock();
+			self.raw_write();
 
 			LockGuard {
 				// safety: we've already acquired the lock
@@ -468,7 +442,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 	/// ```
 	pub fn try_lock(&self, key: ThreadKey) -> Result<LockGuard<L::Guard<'_>>, ThreadKey> {
 		let guard = unsafe {
-			if !self.raw_try_lock() {
+			if !self.raw_try_write() {
 				return Err(key);
 			}
 
@@ -503,44 +477,16 @@ impl<L: Lockable> BoxedLockCollection<L> {
 }
 
 impl<L: Sharable> BoxedLockCollection<L> {
-	pub fn scoped_read<R>(&self, key: impl Keyable, f: impl Fn(L::DataRef<'_>) -> R) -> R {
-		unsafe {
-			// safety: we have the thread key
-			self.raw_read();
-
-			// safety: the data was just locked
-			let r = f(self.data_ref());
-
-			// safety: the collection is still locked
-			self.raw_unlock_read();
-
-			drop(key); // ensure the key stays alive long enough
-
-			r
-		}
+	pub fn scoped_read<'a, R>(&'a self, key: impl Keyable, f: impl Fn(L::DataRef<'a>) -> R) -> R {
+		scoped_read(self, key, f)
 	}
 
-	pub fn scoped_try_read<Key: Keyable, R>(
-		&self,
+	pub fn scoped_try_read<'a, Key: Keyable, R>(
+		&'a self,
 		key: Key,
-		f: impl Fn(L::DataRef<'_>) -> R,
+		f: impl Fn(L::DataRef<'a>) -> R,
 	) -> Result<R, Key> {
-		unsafe {
-			// safety: we have the thread key
-			if !self.raw_try_read() {
-				return Err(key);
-			}
-
-			// safety: we just locked the collection
-			let r = f(self.data_ref());
-
-			// safety: the collection is still locked
-			self.raw_unlock_read();
-
-			drop(key); // ensures the key stays valid long enough
-
-			Ok(r)
-		}
+		scoped_try_read(self, key, f)
 	}
 
 	/// Locks the collection, so that other threads can still read from it
@@ -765,6 +711,56 @@ mod tests {
 	}
 
 	#[test]
+	fn scoped_read_sees_changes() {
+		let mut key = ThreadKey::get().unwrap();
+		let mutexes = [RwLock::new(24), RwLock::new(42)];
+		let collection = BoxedLockCollection::new(mutexes);
+		collection.scoped_lock(&mut key, |guard| *guard[0] = 128);
+
+		let sum = collection.scoped_read(&mut key, |guard| {
+			assert_eq!(*guard[0], 128);
+			assert_eq!(*guard[1], 42);
+			*guard[0] + *guard[1]
+		});
+
+		assert_eq!(sum, 128 + 42);
+	}
+
+	#[test]
+	fn scoped_try_lock_can_fail() {
+		let key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([Mutex::new(1), Mutex::new(2)]);
+		let guard = collection.lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = collection.scoped_try_lock(key, |_| {});
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
+	fn scoped_try_read_can_fail() {
+		let key = ThreadKey::get().unwrap();
+		let collection = BoxedLockCollection::new([RwLock::new(1), RwLock::new(2)]);
+		let guard = collection.lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = collection.scoped_try_read(key, |_| {});
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
 	fn try_lock_works() {
 		let key = ThreadKey::get().unwrap();
 		let collection = BoxedLockCollection::new([Mutex::new(1), Mutex::new(2)]);
@@ -884,15 +880,41 @@ mod tests {
 	#[test]
 	fn works_in_collection() {
 		let key = ThreadKey::get().unwrap();
-		let mutex1 = Mutex::new(0);
-		let mutex2 = Mutex::new(1);
+		let mutex1 = RwLock::new(0);
+		let mutex2 = RwLock::new(1);
 		let collection =
 			BoxedLockCollection::try_new(BoxedLockCollection::try_new([&mutex1, &mutex2]).unwrap())
 				.unwrap();
 
-		let guard = collection.lock(key);
+		let mut guard = collection.lock(key);
 		assert!(mutex1.is_locked());
 		assert!(mutex2.is_locked());
+		assert_eq!(*guard[0], 0);
+		assert_eq!(*guard[1], 1);
+		*guard[0] = 2;
+		let key = BoxedLockCollection::<BoxedLockCollection<[&RwLock<_>; 2]>>::unlock(guard);
+
+		let guard = collection.read(key);
+		assert!(mutex1.is_locked());
+		assert!(mutex2.is_locked());
+		assert_eq!(*guard[0], 2);
+		assert_eq!(*guard[1], 1);
 		drop(guard);
+	}
+
+	#[test]
+	fn as_ref_works() {
+		let mutexes = [Mutex::new(0), Mutex::new(1)];
+		let collection = BoxedLockCollection::new_ref(&mutexes);
+
+		assert!(std::ptr::addr_eq(&mutexes, collection.as_ref()))
+	}
+
+	#[test]
+	fn child() {
+		let mutexes = [Mutex::new(0), Mutex::new(1)];
+		let collection = BoxedLockCollection::new_ref(&mutexes);
+
+		assert!(std::ptr::addr_eq(&mutexes, *collection.child()))
 	}
 }

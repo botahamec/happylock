@@ -1,5 +1,6 @@
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
+use crate::handle_unwind::handle_unwind;
 use crate::lockable::{
 	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
 };
@@ -17,16 +18,16 @@ unsafe impl<L: Lockable + RawLock> RawLock for Poisonable<L> {
 		self.inner.poison()
 	}
 
-	unsafe fn raw_lock(&self) {
-		self.inner.raw_lock()
+	unsafe fn raw_write(&self) {
+		self.inner.raw_write()
 	}
 
-	unsafe fn raw_try_lock(&self) -> bool {
-		self.inner.raw_try_lock()
+	unsafe fn raw_try_write(&self) -> bool {
+		self.inner.raw_try_write()
 	}
 
-	unsafe fn raw_unlock(&self) {
-		self.inner.raw_unlock()
+	unsafe fn raw_unlock_write(&self) {
+		self.inner.raw_unlock_write()
 	}
 
 	unsafe fn raw_read(&self) {
@@ -313,13 +314,19 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	) -> R {
 		unsafe {
 			// safety: we have the thread key
-			self.raw_lock();
+			self.raw_write();
 
 			// safety: the data was just locked
-			let r = f(self.data_mut());
+			let r = handle_unwind(
+				|| f(self.data_mut()),
+				|| {
+					self.poisoned.poison();
+					self.raw_unlock_write();
+				},
+			);
 
 			// safety: the collection is still locked
-			self.raw_unlock();
+			self.raw_unlock_write();
 
 			drop(key); // ensure the key stays alive long enough
 
@@ -334,15 +341,21 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	) -> Result<R, Key> {
 		unsafe {
 			// safety: we have the thread key
-			if !self.raw_try_lock() {
+			if !self.raw_try_write() {
 				return Err(key);
 			}
 
 			// safety: we just locked the collection
-			let r = f(self.data_mut());
+			let r = handle_unwind(
+				|| f(self.data_mut()),
+				|| {
+					self.poisoned.poison();
+					self.raw_unlock_write();
+				},
+			);
 
 			// safety: the collection is still locked
-			self.raw_unlock();
+			self.raw_unlock_write();
 
 			drop(key); // ensures the key stays valid long enough
 
@@ -383,7 +396,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// ```
 	pub fn lock(&self, key: ThreadKey) -> PoisonResult<PoisonGuard<'_, L::Guard<'_>>> {
 		unsafe {
-			self.inner.raw_lock();
+			self.inner.raw_write();
 			self.guard(key)
 		}
 	}
@@ -434,7 +447,7 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// [`WouldBlock`]: `TryLockPoisonableError::WouldBlock`
 	pub fn try_lock(&self, key: ThreadKey) -> TryLockPoisonableResult<'_, L::Guard<'_>> {
 		unsafe {
-			if self.inner.raw_try_lock() {
+			if self.inner.raw_try_write() {
 				Ok(self.guard(key)?)
 			} else {
 				Err(TryLockPoisonableError::WouldBlock(key))
@@ -487,7 +500,13 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 			self.raw_read();
 
 			// safety: the data was just locked
-			let r = f(self.data_ref());
+			let r = handle_unwind(
+				|| f(self.data_ref()),
+				|| {
+					self.poisoned.poison();
+					self.raw_unlock_read();
+				},
+			);
 
 			// safety: the collection is still locked
 			self.raw_unlock_read();
@@ -510,7 +529,13 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 			}
 
 			// safety: we just locked the collection
-			let r = f(self.data_ref());
+			let r = handle_unwind(
+				|| f(self.data_ref()),
+				|| {
+					self.poisoned.poison();
+					self.raw_unlock_read();
+				},
+			);
 
 			// safety: the collection is still locked
 			self.raw_unlock_read();

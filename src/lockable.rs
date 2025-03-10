@@ -28,7 +28,7 @@ pub unsafe trait RawLock {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn raw_lock(&self);
+	unsafe fn raw_write(&self);
 
 	/// Attempt to lock without blocking.
 	///
@@ -41,14 +41,14 @@ pub unsafe trait RawLock {
 	/// value is alive.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
-	unsafe fn raw_try_lock(&self) -> bool;
+	unsafe fn raw_try_write(&self) -> bool;
 
 	/// Releases the lock
 	///
 	/// # Safety
 	///
 	/// It is undefined behavior to use this if the lock is not acquired
-	unsafe fn raw_unlock(&self);
+	unsafe fn raw_unlock_write(&self);
 
 	/// Blocks until the data the lock protects can be safely read.
 	///
@@ -625,7 +625,7 @@ unsafe impl<T: OwnedLockable> OwnedLockable for Vec<T> {}
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{Mutex, RwLock};
+	use crate::{LockCollection, Mutex, RwLock, ThreadKey};
 
 	#[test]
 	fn mut_ref_get_ptrs() {
@@ -719,6 +719,57 @@ mod tests {
 	}
 
 	#[test]
+	fn vec_guard_ref() {
+		let key = ThreadKey::get().unwrap();
+		let locks = vec![RwLock::new(1), RwLock::new(2)];
+		let collection = LockCollection::new(locks);
+
+		let mut guard = collection.lock(key);
+		assert_eq!(*guard[0], 1);
+		assert_eq!(*guard[1], 2);
+		*guard[0] = 3;
+
+		let key = LockCollection::<Vec<RwLock<_>>>::unlock(guard);
+		let guard = collection.read(key);
+		assert_eq!(*guard[0], 3);
+		assert_eq!(*guard[1], 2);
+	}
+
+	#[test]
+	fn vec_data_mut() {
+		let mut key = ThreadKey::get().unwrap();
+		let mutexes = vec![Mutex::new(1), Mutex::new(2)];
+		let collection = LockCollection::new(mutexes);
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard[0], 1);
+			assert_eq!(*guard[1], 2);
+			*guard[0] = 3;
+		});
+
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard[0], 3);
+			assert_eq!(*guard[1], 2);
+		})
+	}
+
+	#[test]
+	fn vec_data_ref() {
+		let mut key = ThreadKey::get().unwrap();
+		let mutexes = vec![RwLock::new(1), RwLock::new(2)];
+		let collection = LockCollection::new(mutexes);
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard[0], 1);
+			assert_eq!(*guard[1], 2);
+			*guard[0] = 3;
+		});
+
+		collection.scoped_read(&mut key, |guard| {
+			assert_eq!(*guard[0], 3);
+			assert_eq!(*guard[1], 2);
+		})
+	}
+
+	#[test]
 	fn box_get_ptrs_empty() {
 		let locks: Box<[Mutex<()>]> = Box::from([]);
 		let mut lock_ptrs = Vec::new();
@@ -756,5 +807,73 @@ mod tests {
 		assert_eq!(lock_ptrs.len(), 2);
 		assert_eq!(*lock_ptrs[0], 1);
 		assert_eq!(*lock_ptrs[1], 2);
+	}
+
+	#[test]
+	fn box_guard_mut() {
+		let key = ThreadKey::get().unwrap();
+		let x = [Mutex::new(1), Mutex::new(2)];
+		let collection: LockCollection<Box<[Mutex<_>]>> = LockCollection::new(Box::new(x));
+
+		let mut guard = collection.lock(key);
+		assert_eq!(*guard[0], 1);
+		assert_eq!(*guard[1], 2);
+		*guard[0] = 3;
+
+		let key = LockCollection::<Box<[Mutex<_>]>>::unlock(guard);
+		let guard = collection.lock(key);
+		assert_eq!(*guard[0], 3);
+		assert_eq!(*guard[1], 2);
+	}
+
+	#[test]
+	fn box_data_mut() {
+		let mut key = ThreadKey::get().unwrap();
+		let mutexes = vec![Mutex::new(1), Mutex::new(2)].into_boxed_slice();
+		let collection = LockCollection::new(mutexes);
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard[0], 1);
+			assert_eq!(*guard[1], 2);
+			*guard[0] = 3;
+		});
+
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard[0], 3);
+			assert_eq!(*guard[1], 2);
+		});
+	}
+
+	#[test]
+	fn box_guard_ref() {
+		let key = ThreadKey::get().unwrap();
+		let locks = [RwLock::new(1), RwLock::new(2)];
+		let collection: LockCollection<Box<[RwLock<_>]>> = LockCollection::new(Box::new(locks));
+
+		let mut guard = collection.lock(key);
+		assert_eq!(*guard[0], 1);
+		assert_eq!(*guard[1], 2);
+		*guard[0] = 3;
+
+		let key = LockCollection::<Box<[RwLock<_>]>>::unlock(guard);
+		let guard = collection.read(key);
+		assert_eq!(*guard[0], 3);
+		assert_eq!(*guard[1], 2);
+	}
+
+	#[test]
+	fn box_data_ref() {
+		let mut key = ThreadKey::get().unwrap();
+		let mutexes = vec![RwLock::new(1), RwLock::new(2)].into_boxed_slice();
+		let collection = LockCollection::new(mutexes);
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard[0], 1);
+			assert_eq!(*guard[1], 2);
+			*guard[0] = 3;
+		});
+
+		collection.scoped_read(&mut key, |guard| {
+			assert_eq!(*guard[0], 3);
+			assert_eq!(*guard[1], 2);
+		});
 	}
 }

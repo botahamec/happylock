@@ -24,11 +24,21 @@ fn thread_2() {
 	assert_eq!(*guard[2], 3);
 }
 
+fn thread_3() {
+	let key = ThreadKey::get().unwrap();
+	std::thread::sleep(Duration::from_millis(50));
+	let guard = RWLOCK_1.write(key);
+	std::thread::sleep(Duration::from_millis(50));
+	assert_eq!(*guard, 1);
+}
+
 #[test]
 fn retries() {
 	let t1 = std::thread::spawn(thread_1);
 	let t2 = std::thread::spawn(thread_2);
+	let t3 = std::thread::spawn(thread_3);
 
 	t1.join().unwrap();
 	t2.join().unwrap();
+	t3.join().unwrap();
 }

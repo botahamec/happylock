@@ -99,7 +99,7 @@ mod tests {
 
 	use super::*;
 	use crate::lockable::Lockable;
-	use crate::{LockCollection, Mutex, ThreadKey};
+	use crate::{LockCollection, Mutex, RwLock, ThreadKey};
 
 	#[test]
 	fn locking_poisoned_mutex_returns_error_in_collection() {
@@ -122,6 +122,31 @@ mod tests {
 		});
 
 		let error = mutex.lock(key);
+		let error = error.as_deref().unwrap_err();
+		assert_eq!(***error.get_ref(), 42);
+	}
+
+	#[test]
+	fn locking_poisoned_rwlock_returns_error_in_collection() {
+		let key = ThreadKey::get().unwrap();
+		let mutex = LockCollection::new(Poisonable::new(RwLock::new(42)));
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let mut guard1 = mutex.read(key);
+				let guard = guard1.as_deref_mut().unwrap();
+				assert_eq!(**guard, 42);
+				panic!();
+
+				#[allow(unreachable_code)]
+				drop(guard1);
+			})
+			.join()
+			.unwrap_err();
+		});
+
+		let error = mutex.read(key);
 		let error = error.as_deref().unwrap_err();
 		assert_eq!(***error.get_ref(), 42);
 	}
@@ -198,6 +223,118 @@ mod tests {
 
 		let error = mutex.into_child().unwrap_err();
 		assert_eq!(error.into_inner().into_inner(), "foo");
+	}
+
+	#[test]
+	fn scoped_lock_can_poison() {
+		let key = ThreadKey::get().unwrap();
+		let mutex = Poisonable::new(Mutex::new(42));
+
+		let r = std::panic::catch_unwind(|| {
+			mutex.scoped_lock(key, |num| {
+				*num.unwrap() = 56;
+				panic!();
+			})
+		});
+		assert!(r.is_err());
+
+		let key = ThreadKey::get().unwrap();
+		assert!(mutex.is_poisoned());
+		mutex.scoped_lock(key, |num| {
+			let Err(error) = num else { panic!() };
+			mutex.clear_poison();
+			let guard = error.into_inner();
+			assert_eq!(*guard, 56);
+		});
+		assert!(!mutex.is_poisoned());
+	}
+
+	#[test]
+	fn scoped_try_lock_can_fail() {
+		let key = ThreadKey::get().unwrap();
+		let mutex = Poisonable::new(Mutex::new(42));
+		let guard = mutex.lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = mutex.scoped_try_lock(key, |_| {});
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
+	fn scoped_try_lock_can_succeed() {
+		let rwlock = Poisonable::new(RwLock::new(42));
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = rwlock.scoped_try_lock(key, |guard| {
+					assert_eq!(*guard.unwrap(), 42);
+				});
+				assert!(r.is_ok());
+			});
+		});
+	}
+
+	#[test]
+	fn scoped_read_can_poison() {
+		let key = ThreadKey::get().unwrap();
+		let mutex = Poisonable::new(RwLock::new(42));
+
+		let r = std::panic::catch_unwind(|| {
+			mutex.scoped_read(key, |num| {
+				assert_eq!(*num.unwrap(), 42);
+				panic!();
+			})
+		});
+		assert!(r.is_err());
+
+		let key = ThreadKey::get().unwrap();
+		assert!(mutex.is_poisoned());
+		mutex.scoped_read(key, |num| {
+			let Err(error) = num else { panic!() };
+			mutex.clear_poison();
+			let guard = error.into_inner();
+			assert_eq!(*guard, 42);
+		});
+		assert!(!mutex.is_poisoned());
+	}
+
+	#[test]
+	fn scoped_try_read_can_fail() {
+		let key = ThreadKey::get().unwrap();
+		let rwlock = Poisonable::new(RwLock::new(42));
+		let guard = rwlock.lock(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = rwlock.scoped_try_read(key, |_| {});
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
+	fn scoped_try_read_can_succeed() {
+		let rwlock = Poisonable::new(RwLock::new(42));
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = rwlock.scoped_try_read(key, |guard| {
+					assert_eq!(*guard.unwrap(), 42);
+				});
+				assert!(r.is_ok());
+			});
+		});
 	}
 
 	#[test]
@@ -315,6 +452,31 @@ mod tests {
 		});
 
 		assert!(!mutex.is_poisoned());
+	}
+
+	#[test]
+	fn clear_poison_for_poisoned_rwlock() {
+		let lock = Arc::new(Poisonable::new(RwLock::new(0)));
+		let c_mutex = Arc::clone(&lock);
+
+		let _ = std::thread::spawn(move || {
+			let key = ThreadKey::get().unwrap();
+			let lock = c_mutex.read(key).unwrap();
+			assert_eq!(*lock, 42);
+			panic!(); // the mutex gets poisoned
+		})
+		.join();
+
+		assert!(lock.is_poisoned());
+
+		let key = ThreadKey::get().unwrap();
+		let _ = lock.lock(key).unwrap_or_else(|mut e| {
+			**e.get_mut() = 1;
+			lock.clear_poison();
+			e.into_inner()
+		});
+
+		assert!(!lock.is_poisoned());
 	}
 
 	#[test]

@@ -75,7 +75,7 @@ pub struct WriteLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
 /// [`Keyable`].
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(
 	&'a RwLock<T, R>,
-	PhantomData<(&'a mut T, R::GuardMarker)>,
+	PhantomData<R::GuardMarker>,
 );
 
 /// RAII structure that unlocks the exclusive write access to a [`RwLock`]
@@ -84,7 +84,7 @@ pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(
 /// [`Keyable`].
 pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
 	&'a RwLock<T, R>,
-	PhantomData<(&'a mut T, R::GuardMarker)>,
+	PhantomData<R::GuardMarker>,
 );
 
 /// RAII structure used to release the shared read access of a lock when
@@ -115,6 +115,8 @@ pub struct RwLockWriteGuard<'a, T: ?Sized, R: RawRwLock> {
 #[cfg(test)]
 mod tests {
 	use crate::lockable::Lockable;
+	use crate::lockable::RawLock;
+	use crate::LockCollection;
 	use crate::RwLock;
 	use crate::ThreadKey;
 
@@ -149,6 +151,33 @@ mod tests {
 	}
 
 	#[test]
+	fn read_lock_scoped_works() {
+		let mut key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new(42);
+		let reader = ReadLock::new(&lock);
+
+		reader.scoped_lock(&mut key, |num| assert_eq!(*num, 42));
+	}
+
+	#[test]
+	fn read_lock_scoped_try_fails_during_write() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new(42);
+		let reader = ReadLock::new(&lock);
+		let guard = lock.write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = reader.scoped_try_lock(key, |_| {});
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
 	fn write_lock_unlocked_when_initialized() {
 		let key = ThreadKey::get().unwrap();
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
@@ -165,7 +194,7 @@ mod tests {
 		readlock.get_ptrs(&mut lock_ptrs);
 
 		assert_eq!(lock_ptrs.len(), 1);
-		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &readlock));
 	}
 
 	#[test]
@@ -176,7 +205,34 @@ mod tests {
 		writelock.get_ptrs(&mut lock_ptrs);
 
 		assert_eq!(lock_ptrs.len(), 1);
-		assert!(std::ptr::addr_eq(lock_ptrs[0], &rwlock));
+		assert!(std::ptr::addr_eq(lock_ptrs[0], &writelock));
+	}
+
+	#[test]
+	fn write_lock_scoped_works() {
+		let mut key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new(42);
+		let writer = WriteLock::new(&lock);
+
+		writer.scoped_lock(&mut key, |num| assert_eq!(*num, 42));
+	}
+
+	#[test]
+	fn write_lock_scoped_try_fails_during_write() {
+		let key = ThreadKey::get().unwrap();
+		let lock: crate::RwLock<_> = RwLock::new(42);
+		let writer = WriteLock::new(&lock);
+		let guard = lock.write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = writer.scoped_try_lock(key, |_| {});
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
 	}
 
 	#[test]
@@ -223,6 +279,69 @@ mod tests {
 
 		assert!(lock.is_locked());
 		drop(guard)
+	}
+
+	#[test]
+	fn locked_after_scoped_write() {
+		let mut key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello, world!");
+
+		lock.scoped_write(&mut key, |guard| {
+			assert!(lock.is_locked());
+			assert_eq!(*guard, "Hello, world!");
+
+			std::thread::scope(|s| {
+				s.spawn(|| {
+					let key = ThreadKey::get().unwrap();
+					assert!(lock.try_read(key).is_err());
+				});
+			})
+		})
+	}
+
+	#[test]
+	fn get_mut_works() {
+		let key = ThreadKey::get().unwrap();
+		let mut lock = crate::RwLock::from(42);
+
+		let mut_ref = lock.get_mut();
+		*mut_ref = 24;
+
+		lock.scoped_read(key, |guard| assert_eq!(*guard, 24))
+	}
+
+	#[test]
+	fn try_write_can_fail() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello");
+		let guard = lock.write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = lock.try_write(key);
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
+	fn try_read_can_fail() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello");
+		let guard = lock.write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let r = lock.try_read(key);
+				assert!(r.is_err());
+			});
+		});
+
+		drop(guard);
 	}
 
 	#[test]
@@ -274,5 +393,201 @@ mod tests {
 		drop(guard);
 
 		assert!(!lock.is_locked());
+	}
+
+	#[test]
+	fn unlock_write() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello, world");
+
+		let mut guard = lock.write(key);
+		*guard = "Goodbye, world!";
+		let key = RwLock::unlock_write(guard);
+
+		let guard = lock.read(key);
+		assert_eq!(*guard, "Goodbye, world!");
+	}
+
+	#[test]
+	fn unlock_read() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello, world");
+
+		let guard = lock.read(key);
+		assert_eq!(*guard, "Hello, world");
+		let key = RwLock::unlock_read(guard);
+
+		let guard = lock.write(key);
+		assert_eq!(*guard, "Hello, world");
+	}
+
+	#[test]
+	fn unlock_read_lock() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello, world");
+		let reader = ReadLock::new(&lock);
+
+		let guard = reader.lock(key);
+		let key = ReadLock::unlock(guard);
+
+		lock.write(key);
+	}
+
+	#[test]
+	fn unlock_write_lock() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("Hello, world");
+		let writer = WriteLock::from(&lock);
+
+		let guard = writer.lock(key);
+		let key = WriteLock::unlock(guard);
+
+		lock.write(key);
+	}
+
+	#[test]
+	fn read_lock_in_collection() {
+		let mut key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("hi");
+		let collection = LockCollection::try_new(ReadLock::new(&lock)).unwrap();
+
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard, "hi");
+		});
+		collection.scoped_read(&mut key, |guard| {
+			assert_eq!(*guard, "hi");
+		});
+		assert!(collection
+			.scoped_try_lock(&mut key, |guard| {
+				assert_eq!(*guard, "hi");
+			})
+			.is_ok());
+		assert!(collection
+			.scoped_try_read(&mut key, |guard| {
+				assert_eq!(*guard, "hi");
+			})
+			.is_ok());
+
+		let guard = collection.lock(key);
+		assert_eq!(**guard, "hi");
+
+		let key = LockCollection::<ReadLock<_, _>>::unlock(guard);
+		let guard = collection.read(key);
+		assert_eq!(**guard, "hi");
+
+		let key = LockCollection::<ReadLock<_, _>>::unlock(guard);
+		let guard = lock.write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_lock(key);
+				assert!(guard.is_err());
+			});
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_read(key);
+				assert!(guard.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
+	fn write_lock_in_collection() {
+		let mut key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("hi");
+		let collection = LockCollection::try_new(WriteLock::new(&lock)).unwrap();
+
+		collection.scoped_lock(&mut key, |guard| {
+			assert_eq!(*guard, "hi");
+		});
+		assert!(collection
+			.scoped_try_lock(&mut key, |guard| {
+				assert_eq!(*guard, "hi");
+			})
+			.is_ok());
+
+		let guard = collection.lock(key);
+		assert_eq!(**guard, "hi");
+
+		let key = LockCollection::<WriteLock<_, _>>::unlock(guard);
+		let guard = lock.write(key);
+
+		std::thread::scope(|s| {
+			s.spawn(|| {
+				let key = ThreadKey::get().unwrap();
+				let guard = collection.try_lock(key);
+				assert!(guard.is_err());
+			});
+		});
+
+		drop(guard);
+	}
+
+	#[test]
+	fn read_ref_as_ref() {
+		let key = ThreadKey::get().unwrap();
+		let lock = LockCollection::new(crate::RwLock::new("hi"));
+		let guard = lock.read(key);
+
+		assert_eq!(*(*guard).as_ref(), "hi");
+	}
+
+	#[test]
+	fn read_guard_as_ref() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("hi");
+		let guard = lock.read(key);
+
+		assert_eq!(*guard.as_ref(), "hi");
+	}
+
+	#[test]
+	fn write_ref_as_ref() {
+		let key = ThreadKey::get().unwrap();
+		let lock = LockCollection::new(crate::RwLock::new("hi"));
+		let guard = lock.lock(key);
+
+		assert_eq!(*(*guard).as_ref(), "hi");
+	}
+
+	#[test]
+	fn write_guard_as_ref() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("hi");
+		let guard = lock.write(key);
+
+		assert_eq!(*guard.as_ref(), "hi");
+	}
+
+	#[test]
+	fn write_guard_as_mut() {
+		let key = ThreadKey::get().unwrap();
+		let lock = crate::RwLock::new("hi");
+		let mut guard = lock.write(key);
+
+		assert_eq!(*guard.as_mut(), "hi");
+		*guard.as_mut() = "foo";
+		assert_eq!(*guard.as_mut(), "foo");
+	}
+
+	#[test]
+	fn poison_read_lock() {
+		let lock = crate::RwLock::new("hi");
+		let reader = ReadLock::new(&lock);
+
+		reader.poison();
+		assert!(lock.poison.is_poisoned());
+	}
+
+	#[test]
+	fn poison_write_lock() {
+		let lock = crate::RwLock::new("hi");
+		let reader = WriteLock::new(&lock);
+
+		reader.poison();
+		assert!(lock.poison.is_poisoned());
 	}
 }

@@ -39,7 +39,7 @@ impl<T: ?Sized, R: RawMutex> Drop for MutexRef<'_, T, R> {
 	fn drop(&mut self) {
 		// safety: this guard is being destroyed, so the data cannot be
 		//         accessed without locking again
-		unsafe { self.0.raw_unlock() }
+		unsafe { self.0.raw_unlock_write() }
 	}
 }
 
@@ -79,7 +79,7 @@ impl<'a, T: ?Sized, R: RawMutex> MutexRef<'a, T, R> {
 	/// Creates a reference to the underlying data of a mutex without
 	/// attempting to lock it or take ownership of the key. But it's also quite
 	/// dangerous to drop.
-	pub(crate) unsafe fn new(mutex: &'a Mutex<T, R>) -> Self {
+	pub(crate) const unsafe fn new(mutex: &'a Mutex<T, R>) -> Self {
 		Self(mutex, PhantomData)
 	}
 }
@@ -139,7 +139,7 @@ impl<'a, T: ?Sized, R: RawMutex> MutexGuard<'a, T, R> {
 	/// Create a guard to the given mutex. Undefined if multiple guards to the
 	/// same mutex exist at once.
 	#[must_use]
-	pub(super) unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: ThreadKey) -> Self {
+	pub(super) const unsafe fn new(mutex: &'a Mutex<T, R>, thread_key: ThreadKey) -> Self {
 		Self {
 			mutex: MutexRef(mutex, PhantomData),
 			thread_key,

@@ -7,7 +7,7 @@ mod guard;
 mod owned;
 mod r#ref;
 mod retry;
-mod utils;
+pub(crate) mod utils;
 
 /// Locks a collection of locks, which cannot be shared immutably.
 ///

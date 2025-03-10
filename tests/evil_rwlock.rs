@@ -1,3 +1,4 @@
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 use happylock::collection::{BoxedLockCollection, RetryingLockCollection};
@@ -63,6 +64,23 @@ fn boxed_rwlocks() {
 	assert!(good_mutex.scoped_try_write(&mut key, |_| {}).is_ok());
 	assert!(evil_mutex.scoped_try_write(&mut key, |_| {}).is_err());
 	assert!(useless_mutex.scoped_try_write(&mut key, |_| {}).is_ok());
+
+	std::thread::scope(|s| {
+		s.spawn(|| {
+			let evil_mutex = AssertUnwindSafe(evil_mutex);
+			let r = std::panic::catch_unwind(|| {
+				let key = ThreadKey::get().unwrap();
+				evil_mutex.write(key);
+			});
+
+			assert!(r.is_err());
+		});
+
+		s.spawn(|| {
+			let key = ThreadKey::get().unwrap();
+			good_mutex.write(key);
+		});
+	});
 }
 
 #[test]

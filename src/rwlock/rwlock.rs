@@ -5,6 +5,7 @@ use std::panic::AssertUnwindSafe;
 
 use lock_api::RawRwLock;
 
+use crate::collection::utils;
 use crate::handle_unwind::handle_unwind;
 use crate::lockable::{
 	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
@@ -18,7 +19,7 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 		self.poison.poison();
 	}
 
-	unsafe fn raw_lock(&self) {
+	unsafe fn raw_write(&self) {
 		assert!(
 			!self.poison.is_poisoned(),
 			"The read-write lock has been killed"
@@ -29,7 +30,7 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 		handle_unwind(|| this.raw.lock_exclusive(), || self.poison())
 	}
 
-	unsafe fn raw_try_lock(&self) -> bool {
+	unsafe fn raw_try_write(&self) -> bool {
 		if self.poison.is_poisoned() {
 			return false;
 		}
@@ -39,7 +40,7 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 		handle_unwind(|| this.raw.try_lock_exclusive(), || self.poison())
 	}
 
-	unsafe fn raw_unlock(&self) {
+	unsafe fn raw_unlock_write(&self) {
 		// if the closure unwraps, then the mutex will be killed
 		let this = AssertUnwindSafe(self);
 		handle_unwind(|| this.raw.unlock_exclusive(), || self.poison())
@@ -73,7 +74,7 @@ unsafe impl<T: ?Sized, R: RawRwLock> RawLock for RwLock<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
+unsafe impl<T, R: RawRwLock> Lockable for RwLock<T, R> {
 	type Guard<'g>
 		= RwLockWriteRef<'g, T, R>
 	where
@@ -97,7 +98,7 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Lockable for RwLock<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {
+unsafe impl<T, R: RawRwLock> Sharable for RwLock<T, R> {
 	type ReadGuard<'g>
 		= RwLockReadRef<'g, T, R>
 	where
@@ -117,9 +118,9 @@ unsafe impl<T: Send, R: RawRwLock + Send + Sync> Sharable for RwLock<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock + Send + Sync> OwnedLockable for RwLock<T, R> {}
+unsafe impl<T: Send, R: RawRwLock> OwnedLockable for RwLock<T, R> {}
 
-impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
+impl<T: Send, R: RawRwLock> LockableIntoInner for RwLock<T, R> {
 	type Inner = T;
 
 	fn into_inner(self) -> Self::Inner {
@@ -127,7 +128,7 @@ impl<T: Send, R: RawRwLock + Send + Sync> LockableIntoInner for RwLock<T, R> {
 	}
 }
 
-impl<T: Send, R: RawRwLock + Send + Sync> LockableGetMut for RwLock<T, R> {
+impl<T: Send, R: RawRwLock> LockableGetMut for RwLock<T, R> {
 	type Inner<'a>
 		= &'a mut T
 	where
@@ -160,7 +161,7 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
-impl<T: ?Sized + Debug, R: RawRwLock> Debug for RwLock<T, R> {
+impl<T: Debug, R: RawRwLock> Debug for RwLock<T, R> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		// safety: this is just a try lock, and the value is dropped
 		//         immediately after, so there's no risk of blocking ourselves
@@ -247,85 +248,29 @@ impl<T: ?Sized, R> RwLock<T, R> {
 	}
 }
 
-impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
-	pub fn scoped_read<Ret>(&self, key: impl Keyable, f: impl Fn(&T) -> Ret) -> Ret {
-		unsafe {
-			// safety: we have the thread key
-			self.raw_read();
-
-			// safety: the rwlock was just locked
-			let r = f(self.data.get().as_ref().unwrap_unchecked());
-
-			// safety: the rwlock is already locked
-			self.raw_unlock_read();
-
-			drop(key); // ensure the key stays valid for long enough
-
-			r
-		}
+impl<T, R: RawRwLock> RwLock<T, R> {
+	pub fn scoped_read<'a, Ret>(&'a self, key: impl Keyable, f: impl Fn(&'a T) -> Ret) -> Ret {
+		utils::scoped_read(self, key, f)
 	}
 
-	pub fn scoped_try_read<Key: Keyable, Ret>(
-		&self,
+	pub fn scoped_try_read<'a, Key: Keyable, Ret>(
+		&'a self,
 		key: Key,
-		f: impl Fn(&T) -> Ret,
+		f: impl Fn(&'a T) -> Ret,
 	) -> Result<Ret, Key> {
-		unsafe {
-			// safety: we have the thread key
-			if !self.raw_try_read() {
-				return Err(key);
-			}
-
-			// safety: the rwlock was just locked
-			let r = f(self.data.get().as_ref().unwrap_unchecked());
-
-			// safety: the rwlock is already locked
-			self.raw_unlock_read();
-
-			drop(key); // ensure the key stays valid for long enough
-
-			Ok(r)
-		}
+		utils::scoped_try_read(self, key, f)
 	}
 
-	pub fn scoped_write<Ret>(&self, key: impl Keyable, f: impl Fn(&mut T) -> Ret) -> Ret {
-		unsafe {
-			// safety: we have the thread key
-			self.raw_lock();
-
-			// safety: we just locked the rwlock
-			let r = f(self.data.get().as_mut().unwrap_unchecked());
-
-			// safety: the rwlock is already locked
-			self.raw_unlock();
-
-			drop(key); // ensure the key stays valid for long enough
-
-			r
-		}
+	pub fn scoped_write<'a, Ret>(&'a self, key: impl Keyable, f: impl Fn(&'a mut T) -> Ret) -> Ret {
+		utils::scoped_write(self, key, f)
 	}
 
-	pub fn scoped_try_write<Key: Keyable, Ret>(
-		&self,
+	pub fn scoped_try_write<'a, Key: Keyable, Ret>(
+		&'a self,
 		key: Key,
-		f: impl Fn(&mut T) -> Ret,
+		f: impl Fn(&'a mut T) -> Ret,
 	) -> Result<Ret, Key> {
-		unsafe {
-			// safety: we have the thread key
-			if !self.raw_try_lock() {
-				return Err(key);
-			}
-
-			// safety: the rwlock was just locked
-			let r = f(self.data.get().as_mut().unwrap_unchecked());
-
-			// safety: the rwlock is already locked
-			self.raw_unlock();
-
-			drop(key); // ensure the key stays valid for long enough
-
-			Ok(r)
-		}
+		utils::scoped_try_write(self, key, f)
 	}
 
 	/// Locks this `RwLock` with shared read access, blocking the current
@@ -426,7 +371,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// without exclusive access to the key is undefined behavior.
 	#[cfg(test)]
 	pub(crate) unsafe fn try_write_no_key(&self) -> Option<RwLockWriteRef<'_, T, R>> {
-		if self.raw_try_lock() {
+		if self.raw_try_write() {
 			// safety: the lock is locked first
 			Some(RwLockWriteRef(self, PhantomData))
 		} else {
@@ -463,7 +408,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// [`ThreadKey`]: `crate::ThreadKey`
 	pub fn write(&self, key: ThreadKey) -> RwLockWriteGuard<'_, T, R> {
 		unsafe {
-			self.raw_lock();
+			self.raw_write();
 
 			// safety: the lock is locked first
 			RwLockWriteGuard::new(self, key)
@@ -498,7 +443,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// ```
 	pub fn try_write(&self, key: ThreadKey) -> Result<RwLockWriteGuard<'_, T, R>, ThreadKey> {
 		unsafe {
-			if self.raw_try_lock() {
+			if self.raw_try_write() {
 				// safety: the lock is locked first
 				Ok(RwLockWriteGuard::new(self, key))
 			} else {
@@ -533,9 +478,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// ```
 	#[must_use]
 	pub fn unlock_read(guard: RwLockReadGuard<'_, T, R>) -> ThreadKey {
-		unsafe {
-			guard.rwlock.0.raw_unlock_read();
-		}
+		drop(guard.rwlock);
 		guard.thread_key
 	}
 
@@ -560,9 +503,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// ```
 	#[must_use]
 	pub fn unlock_write(guard: RwLockWriteGuard<'_, T, R>) -> ThreadKey {
-		unsafe {
-			guard.rwlock.0.raw_unlock();
-		}
+		drop(guard.rwlock);
 		guard.thread_key
 	}
 }
