@@ -5,7 +5,6 @@ use std::panic::AssertUnwindSafe;
 
 use lock_api::RawRwLock;
 
-use crate::collection::utils;
 use crate::handle_unwind::handle_unwind;
 use crate::lockable::{
 	Lockable, LockableGetMut, LockableIntoInner, OwnedLockable, RawLock, Sharable,
@@ -118,9 +117,9 @@ unsafe impl<T, R: RawRwLock> Sharable for RwLock<T, R> {
 	}
 }
 
-unsafe impl<T: Send, R: RawRwLock> OwnedLockable for RwLock<T, R> {}
+unsafe impl<T, R: RawRwLock> OwnedLockable for RwLock<T, R> {}
 
-impl<T: Send, R: RawRwLock> LockableIntoInner for RwLock<T, R> {
+impl<T, R: RawRwLock> LockableIntoInner for RwLock<T, R> {
 	type Inner = T;
 
 	fn into_inner(self) -> Self::Inner {
@@ -128,7 +127,7 @@ impl<T: Send, R: RawRwLock> LockableIntoInner for RwLock<T, R> {
 	}
 }
 
-impl<T: Send, R: RawRwLock> LockableGetMut for RwLock<T, R> {
+impl<T, R: RawRwLock> LockableGetMut for RwLock<T, R> {
 	type Inner<'a>
 		= &'a mut T
 	where
@@ -248,9 +247,26 @@ impl<T: ?Sized, R> RwLock<T, R> {
 	}
 }
 
-impl<T, R: RawRwLock> RwLock<T, R> {
+impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	pub fn scoped_read<'a, Ret>(&'a self, key: impl Keyable, f: impl Fn(&'a T) -> Ret) -> Ret {
-		utils::scoped_read(self, key, f)
+		unsafe {
+			// safety: we have the key
+			self.raw_read();
+
+			// safety: the data has been locked
+			let r = handle_unwind(
+				|| f(self.data.get().as_ref().unwrap_unchecked()),
+				|| self.raw_unlock_read(),
+			);
+
+			// ensures the key is held long enough
+			drop(key);
+
+			// safety: the mutex is still locked
+			self.raw_unlock_read();
+
+			r
+		}
 	}
 
 	pub fn scoped_try_read<'a, Key: Keyable, Ret>(
@@ -258,11 +274,47 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 		key: Key,
 		f: impl Fn(&'a T) -> Ret,
 	) -> Result<Ret, Key> {
-		utils::scoped_try_read(self, key, f)
+		unsafe {
+			// safety: we have the key
+			if !self.raw_try_read() {
+				return Err(key);
+			}
+
+			// safety: the data has been locked
+			let r = handle_unwind(
+				|| f(self.data.get().as_ref().unwrap_unchecked()),
+				|| self.raw_unlock_read(),
+			);
+
+			// ensures the key is held long enough
+			drop(key);
+
+			// safety: the mutex is still locked
+			self.raw_unlock_read();
+
+			Ok(r)
+		}
 	}
 
 	pub fn scoped_write<'a, Ret>(&'a self, key: impl Keyable, f: impl Fn(&'a mut T) -> Ret) -> Ret {
-		utils::scoped_write(self, key, f)
+		unsafe {
+			// safety: we have the key
+			self.raw_write();
+
+			// safety: the data has been locked
+			let r = handle_unwind(
+				|| f(self.data.get().as_mut().unwrap_unchecked()),
+				|| self.raw_unlock_write(),
+			);
+
+			// ensures the key is held long enough
+			drop(key);
+
+			// safety: the mutex is still locked
+			self.raw_unlock_write();
+
+			r
+		}
 	}
 
 	pub fn scoped_try_write<'a, Key: Keyable, Ret>(
@@ -270,7 +322,26 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 		key: Key,
 		f: impl Fn(&'a mut T) -> Ret,
 	) -> Result<Ret, Key> {
-		utils::scoped_try_write(self, key, f)
+		unsafe {
+			// safety: we have the key
+			if !self.raw_try_write() {
+				return Err(key);
+			}
+
+			// safety: the data has been locked
+			let r = handle_unwind(
+				|| f(self.data.get().as_mut().unwrap_unchecked()),
+				|| self.raw_unlock_write(),
+			);
+
+			// ensures the key is held long enough
+			drop(key);
+
+			// safety: the mutex is still locked
+			self.raw_unlock_write();
+
+			Ok(r)
+		}
 	}
 
 	/// Locks this `RwLock` with shared read access, blocking the current

@@ -4,14 +4,17 @@ use crate::handle_unwind::handle_unwind;
 use crate::lockable::{Lockable, RawLock, Sharable};
 use crate::Keyable;
 
+/// Returns a list of locks in the given collection and sorts them by their
+/// memory address
 #[must_use]
 pub fn get_locks<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
-	let mut locks = Vec::new();
-	data.get_ptrs(&mut locks);
+	let mut locks = get_locks_unsorted(data);
 	locks.sort_by_key(|lock| &raw const **lock);
 	locks
 }
 
+/// Returns a list of locks from the data. Unlike the above function, this does
+/// not do any sorting of the locks.
 #[must_use]
 pub fn get_locks_unsorted<L: Lockable>(data: &L) -> Vec<&dyn RawLock> {
 	let mut locks = Vec::new();
@@ -121,7 +124,7 @@ pub unsafe fn ordered_try_read(locks: &[&dyn RawLock]) -> bool {
 	)
 }
 
-pub fn scoped_write<'a, L: RawLock + Lockable, R>(
+pub fn scoped_write<'a, L: RawLock + Lockable + ?Sized, R>(
 	collection: &'a L,
 	key: impl Keyable,
 	f: impl FnOnce(L::DataMut<'a>) -> R,
@@ -131,7 +134,10 @@ pub fn scoped_write<'a, L: RawLock + Lockable, R>(
 		collection.raw_write();
 
 		// safety: we just locked this
-		let r = f(collection.data_mut());
+		let r = handle_unwind(
+			|| f(collection.data_mut()),
+			|| collection.raw_unlock_write(),
+		);
 
 		// this ensures the key is held long enough
 		drop(key);
@@ -143,7 +149,7 @@ pub fn scoped_write<'a, L: RawLock + Lockable, R>(
 	}
 }
 
-pub fn scoped_try_write<'a, L: RawLock + Lockable, Key: Keyable, R>(
+pub fn scoped_try_write<'a, L: RawLock + Lockable + ?Sized, Key: Keyable, R>(
 	collection: &'a L,
 	key: Key,
 	f: impl FnOnce(L::DataMut<'a>) -> R,
@@ -155,7 +161,10 @@ pub fn scoped_try_write<'a, L: RawLock + Lockable, Key: Keyable, R>(
 		}
 
 		// safety: we just locked this
-		let r = f(collection.data_mut());
+		let r = handle_unwind(
+			|| f(collection.data_mut()),
+			|| collection.raw_unlock_write(),
+		);
 
 		// this ensures the key is held long enough
 		drop(key);
@@ -167,7 +176,7 @@ pub fn scoped_try_write<'a, L: RawLock + Lockable, Key: Keyable, R>(
 	}
 }
 
-pub fn scoped_read<'a, L: RawLock + Sharable, R>(
+pub fn scoped_read<'a, L: RawLock + Sharable + ?Sized, R>(
 	collection: &'a L,
 	key: impl Keyable,
 	f: impl FnOnce(L::DataRef<'a>) -> R,
@@ -177,7 +186,7 @@ pub fn scoped_read<'a, L: RawLock + Sharable, R>(
 		collection.raw_read();
 
 		// safety: we just locked this
-		let r = f(collection.data_ref());
+		let r = handle_unwind(|| f(collection.data_ref()), || collection.raw_unlock_read());
 
 		// this ensures the key is held long enough
 		drop(key);
@@ -189,7 +198,7 @@ pub fn scoped_read<'a, L: RawLock + Sharable, R>(
 	}
 }
 
-pub fn scoped_try_read<'a, L: RawLock + Sharable, Key: Keyable, R>(
+pub fn scoped_try_read<'a, L: RawLock + Sharable + ?Sized, Key: Keyable, R>(
 	collection: &'a L,
 	key: Key,
 	f: impl FnOnce(L::DataRef<'a>) -> R,
@@ -201,7 +210,7 @@ pub fn scoped_try_read<'a, L: RawLock + Sharable, Key: Keyable, R>(
 		}
 
 		// safety: we just locked this
-		let r = f(collection.data_ref());
+		let r = handle_unwind(|| f(collection.data_ref()), || collection.raw_unlock_read());
 
 		// this ensures the key is held long enough
 		drop(key);

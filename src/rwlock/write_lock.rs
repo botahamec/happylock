@@ -49,7 +49,7 @@ unsafe impl<T, R: RawRwLock> Lockable for WriteLock<'_, T, R> {
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self)
+		ptrs.push(self.0);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {

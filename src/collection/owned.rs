@@ -63,6 +63,9 @@ unsafe impl<L: Lockable> Lockable for OwnedLockCollection<L> {
 	#[mutants::skip] // It's hard to test lkocks in an OwnedLockCollection, because they're owned
 	#[cfg(not(tarpaulin_include))]
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
+		// It's ok to use self here, because the values in the collection already
+		// cannot be referenced anywhere else. It's necessary to use self as the lock
+		// because otherwise we will be handing out shared references to the child
 		ptrs.push(self)
 	}
 
@@ -263,6 +266,7 @@ impl<L: OwnedLockable> OwnedLockCollection<L> {
 	/// ```
 	pub fn try_lock(&self, key: ThreadKey) -> Result<LockGuard<L::Guard<'_>>, ThreadKey> {
 		let guard = unsafe {
+			// safety: we've acquired the key
 			if !self.raw_try_write() {
 				return Err(key);
 			}

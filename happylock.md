@@ -465,6 +465,98 @@ This is what we were trying to avoid earlier
 
 ---
 
+## Keyable
+
+```rust
+unsafe trait Keyable: Sealed {}
+unsafe impl Keyable for ThreadKey {}
+unsafe impl Keyable for &mut ThreadKey {}
+```
+
+This is helpful because you can get the thread key back immediately.
+
+```rust
+impl<T, R> Mutex<T, R> {
+    pub fn lock<'a, 'key, Key: Keyable + 'key>(
+        &'a self,
+        key: Key
+    ) -> MutexGuard<'a, 'key, T, R, Key>;
+}
+```
+
+---
+
+## Keyable
+
+So conveniently, this compiles.
+
+```rust
+let mut key = ThreadKey::get().unwrap();
+let guard = MUTEX1.lock(&mut key);
+
+// the first guard can no longer be used here
+let guard = MUTEX1.lock(&mut key);
+```
+
+The problem is that this also compiles
+
+```rust
+let guard = MUTEX1.lock(&mut key);
+std::mem::forget(guard);
+
+// wait, the mutex is still locked!
+let guard = MUTEX1.lock(&mut key);
+// deadlocked now
+```
+
+---
+
+## Scoped Threads
+
+Let's take inspiration from scoped threads:
+
+```rust
+fn scope<'env, F, T>(f: F) -> T
+where
+    F: for<'scope> FnOnce(&'scope Scope<'scope, env>) -> T;
+
+let mut a = vec![1, 2, 3];
+let mut x = 0;
+
+scope(|scope| {
+    scope.spawn(|| {
+        println!("we can borrow `a` here");
+        dbg!(a)
+    });
+    scope.spawn(|| {
+        println!("we can even borrow mutably");
+        println!("no other threads will use it");
+        x += a[0] + a[2];
+    });
+    println!("hello from the main thread");
+});
+```
+
+The `Drop` implementation of the `Scope` type will join all of the spawned
+threads. And because we only have a  reference to the `Scope`, we'll never be
+able to `mem::forget` it.
+
+---
+
+## Scoped Locks
+
+Let's try the same thing for locks
+
+```rust
+let mut key = ThreadKey::get().unwrap();
+let mutex_plus_one = MUTEX.scoped_lock(|guard: &mut i32| *guard + 1);
+```
+
+If you use scoped locks, then you can guarantee that locks will always be
+unlocked (assuming you never immediately abort the thread).
+
+---
+
 ## RwLocks in collections
 
 This is what I used in HappyLock 0.1:
@@ -537,7 +629,7 @@ Allows: `Poisonable<LockCollection>` and `LockCollection<Poisonable>`
 
 ---
 
-# `LockableGetMut`
+## `LockableGetMut`
 
 ```rust
 fn Mutex::<T>::get_mut(&mut self) -> &mut T // already exists in std
@@ -557,19 +649,6 @@ impl<A: LockableGetMut, B: LockableGetMut> LockableGetMut for (A, B) {
     }
 }
 ```
-
----
-
-## Missing Features
-
-- `Condvar`/`Barrier`
-- `OnceLock` or `LazyLock`
-- Standard Library Backend
-- Support for `no_std`
-- Convenience methods: `lock_swap`, `lock_set`?
-- `try_lock_swap` doesn't need a `ThreadKey`
-- Going further: `LockCell` API (preemptive allocation)
-
 ---
 
 <!--_class: invert lead -->

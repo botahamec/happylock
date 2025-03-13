@@ -23,7 +23,6 @@ unsafe impl<L: Lockable> RawLock for BoxedLockCollection<L> {
 	}
 
 	unsafe fn raw_try_write(&self) -> bool {
-		println!("{}", self.locks().len());
 		utils::ordered_try_write(self.locks())
 	}
 
@@ -60,7 +59,10 @@ unsafe impl<L: Lockable> Lockable for BoxedLockCollection<L> {
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self);
+		// Doing it this way means that if a boxed collection is put inside a
+		// different collection, it will use the other method of locking. However,
+		// this prevents duplicate locks in a collection.
+		ptrs.extend_from_slice(&self.locks);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
@@ -170,6 +172,7 @@ impl<L: Debug> Debug for BoxedLockCollection<L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(BoxedLockCollection))
 			.field("data", &self.data)
+			// there's not much reason to show the sorted locks
 			.finish_non_exhaustive()
 	}
 }
@@ -331,7 +334,7 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		// cast to *const () because fat pointers can't be converted to usize
 		locks.sort_by_key(|lock| (&raw const **lock).cast::<()>() as usize);
 
-		// safety we're just changing the lifetimes
+		// safety: we're just changing the lifetimes
 		let locks: Vec<&'static dyn RawLock> = std::mem::transmute(locks);
 		let data = &raw const *data;
 		Self { data, locks }

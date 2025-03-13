@@ -105,6 +105,9 @@ pub unsafe trait RawLock {
 /// The order of the resulting list from `get_ptrs` must be deterministic. As
 /// long as the value is not mutated, the references must always be in the same
 /// order.
+///
+/// The list returned by `get_ptrs` must contain any lock which could possibly
+/// be referenced in another collection.
 pub unsafe trait Lockable {
 	/// The exclusive guard that does not hold a key
 	type Guard<'g>
@@ -333,8 +336,6 @@ macro_rules! tuple_impls {
 			}
 
 			unsafe fn guard(&self) -> Self::Guard<'_> {
-				// It's weird that this works
-				// I don't think any other way of doing it compiles
 				($(self.$value.guard(),)*)
 			}
 
@@ -525,6 +526,16 @@ impl<T: LockableGetMut + 'static> LockableGetMut for Box<[T]> {
 	}
 }
 
+impl<T: LockableIntoInner + 'static> LockableIntoInner for Box<[T]> {
+	type Inner = Box<[T::Inner]>;
+
+	fn into_inner(self) -> Self::Inner {
+		Self::into_iter(self)
+			.map(LockableIntoInner::into_inner)
+			.collect()
+	}
+}
+
 unsafe impl<T: Sharable> Sharable for Box<[T]> {
 	type ReadGuard<'g>
 		= Box<[T::ReadGuard<'g>]>
@@ -544,28 +555,6 @@ unsafe impl<T: Sharable> Sharable for Box<[T]> {
 		self.iter().map(|lock| lock.data_ref()).collect()
 	}
 }
-
-unsafe impl<T: Sharable> Sharable for Vec<T> {
-	type ReadGuard<'g>
-		= Box<[T::ReadGuard<'g>]>
-	where
-		Self: 'g;
-
-	type DataRef<'a>
-		= Box<[T::DataRef<'a>]>
-	where
-		Self: 'a;
-
-	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
-		self.iter().map(|lock| lock.read_guard()).collect()
-	}
-
-	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
-		self.iter().map(|lock| lock.data_ref()).collect()
-	}
-}
-
-unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
 
 unsafe impl<T: Lockable> Lockable for Vec<T> {
 	// There's no reason why I'd ever want to extend a list of lock guards
@@ -594,10 +583,30 @@ unsafe impl<T: Lockable> Lockable for Vec<T> {
 	}
 }
 
+unsafe impl<T: Sharable> Sharable for Vec<T> {
+	type ReadGuard<'g>
+		= Box<[T::ReadGuard<'g>]>
+	where
+		Self: 'g;
+
+	type DataRef<'a>
+		= Box<[T::DataRef<'a>]>
+	where
+		Self: 'a;
+
+	unsafe fn read_guard(&self) -> Self::ReadGuard<'_> {
+		self.iter().map(|lock| lock.read_guard()).collect()
+	}
+
+	unsafe fn data_ref(&self) -> Self::DataRef<'_> {
+		self.iter().map(|lock| lock.data_ref()).collect()
+	}
+}
+
+unsafe impl<T: OwnedLockable> OwnedLockable for Box<[T]> {}
+
 // I'd make a generic impl<T: Lockable, I: IntoIterator<Item=T>> Lockable for I
 // but I think that'd require sealing up this trait
-
-// TODO: using edition 2024, impl LockableIntoInner for Box<[T]>
 
 impl<T: LockableGetMut + 'static> LockableGetMut for Vec<T> {
 	type Inner<'a>

@@ -71,7 +71,9 @@ unsafe impl<L: Lockable> Lockable for RefLockCollection<'_, L> {
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self)
+		// Just like with BoxedLockCollection, we need to return all the individual
+		// locks to avoid duplicates
+		ptrs.extend_from_slice(&self.locks);
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {
@@ -115,6 +117,7 @@ impl<L: Debug> Debug for RefLockCollection<'_, L> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(stringify!(RefLockCollection))
 			.field("data", self.data)
+			// there's not much reason to show the sorting order
 			.finish_non_exhaustive()
 	}
 }
@@ -314,6 +317,7 @@ impl<'a, L: Lockable> RefLockCollection<'a, L> {
 	/// ```
 	pub fn try_lock(&self, key: ThreadKey) -> Result<LockGuard<L::Guard<'_>>, ThreadKey> {
 		let guard = unsafe {
+			// safety: we have the thread key
 			if !self.raw_try_write() {
 				return Err(key);
 			}

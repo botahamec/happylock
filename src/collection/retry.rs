@@ -244,7 +244,9 @@ unsafe impl<L: Lockable> Lockable for RetryingLockCollection<L> {
 		Self: 'a;
 
 	fn get_ptrs<'a>(&'a self, ptrs: &mut Vec<&'a dyn RawLock>) {
-		ptrs.push(self)
+		// this collection, just like the sorting collection, must return all of its
+		// locks in order to check for duplication
+		self.data.get_ptrs(ptrs)
 	}
 
 	unsafe fn guard(&self) -> Self::Guard<'_> {

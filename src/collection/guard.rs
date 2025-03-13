@@ -12,6 +12,11 @@ impl<Guard: Hash> Hash for LockGuard<Guard> {
 	}
 }
 
+// No implementations of Eq, PartialEq, PartialOrd, or Ord
+// You can't implement both PartialEq<Self> and PartialEq<T>
+// It's easier to just implement neither and ask users to dereference
+// This is less of a problem when using the scoped lock API
+
 #[mutants::skip]
 #[cfg(not(tarpaulin_include))]
 impl<Guard: Debug> Debug for LockGuard<Guard> {
