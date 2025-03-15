@@ -13,6 +13,38 @@ deadlock-free mutexes at compile-time
 
 ---
 
+<!-- _class: lead invert -->
+# Background
+
+---
+
+## Goals: Background
+
+ - Quick refresh on the borrow checker
+ - What is a Mutex?
+ - How Rust does Mutexes
+ - What is a deadlock?
+ - How can deadlocks be prevented?
+
+---
+
+## Quick Refresh on Borrow Checker Rules
+
+1. You may have multiple immutable references to a value at a time
+2. If there is a mutable reference to a value, then it is the only reference
+3. Values cannot be moved while they are being referenced
+
+```rust
+let s = String::new("Hello, world!");
+let r1 = &s;
+let r2 = &s; // this is allowed because of #1
+let mr = &mut s; // illegal: rule #2
+drop(s); // also illegal: rule #3
+println!("{r1} {r2}");
+```
+
+---
+
 ## What is a Mutex?
 
 It gives mutually-exclusive access for one thread, to prevent races.
@@ -37,26 +69,9 @@ This prevents the number from being modified while it is being printed, which wo
 
 ---
 
-## Quick Refresh on Borrow Checker Rules
-
-1. You may have multiple immutable references to a value at a time
-2. If there is a mutable reference to a value, then it is the only reference
-3. Values cannot be moved while they are being referenced
-
-```rust
-let s = String::new("Hello, world!");
-let r1 = &s;
-let r2 = &s; // this is allowed because of #1
-let mr = &mut s; // illegal: rule #2
-drop(s); // also illegal: rule #3
-println!("{r1} {r2}");
-```
-
----
-
 ## Rust Mutexes
 
-In Rust, the mutex is safer than in C. The mutex protects data the data itself rather than sections of code.
+In Rust, the mutex is safer than in C. The mutex protects the data itself rather than sections of code.
 
 ```rust
 static NUMBER: Mutex<i32> = Mutex::new(1);
@@ -64,7 +79,7 @@ static NUMBER: Mutex<i32> = Mutex::new(1);
 fn thread_1() {
     // MutexGuard grants access to the data inside of the mutex
     // We cannot access this data without locking first
-    let number: MutexGuard<'_, i32> = NUMBER.lock().unwrap();
+    let mut number: MutexGuard<'_, i32> = NUMBER.lock().unwrap();
     // MutexGuard is a smart pointer that we can modify directly
     *number += 5;
 
@@ -76,7 +91,7 @@ fn thread_1() {
 
 ## What is a deadlock?
 
-The lock function locks until no thread has acquired the thread key.
+Locking a mutex in a way that makes it impossible to be unlocked.
 
 A simple way to cause deadlock is to lock twice on the same thread.
 
@@ -160,22 +175,25 @@ Acquiring a new lock requires releasing all currently-held locks.
 
 ---
 
-## How could an Operating System do this?
+## Summary: Background
 
-```c
-#include <oslock.h>
+ - Mutexes allow mutually exclusive access to memory
+ - Rust mutexes use the borrow checker to protect data, rather than sections of code
+ - The borrow checker ensures the mutex is used somewhat correctly
+ - Deadlocks prevent threads from making progress because a lock prevents unlocking
+ - We can prevent deadlocks using total allocation
 
-void main() {
-    os_mutex_t m = os_mutex_create();
+---
 
-    // the os returns an error if the rules aren't followed
-    if (os_mutex_lock(&m)) {
-        printf("Error!\n");
-    }
+# Preventing Deadlock
 
-    return 0;
-}
-```
+---
+
+## Goals: Preventing Deadlock
+
+ - Show how the borrow checker can enforce total allocation
+ - Lock multiple mutexes at the same time
+ - Make sure that we lock multiple mutexes, we don't lock the same one twice
 
 ---
 
@@ -191,21 +209,16 @@ fn main() {
 
     let mutex = Mutex::new(10);
 
-    // locking a mutex requires either the ThreadKey or a &mut ThreadKey
+    // locking a mutex requires the ThreadKey
     let mut guard = mutex.lock(key);
     // this means that a thread cannot lock more than one thing at a time
 
     println!("{}", *guard);
+
+    // you can get the ThreadKey back by unlocking
+    let key = Mutex::unlock(guard);
 }
 ```
-
----
-
-## Performance: it's freaking fast
-
-`ThreadKey` is a mostly zero-cost abstraction. It takes no memory at runtime. The only cost is getting and dropping the key.
-
-`Mutex` is a thin wrapper around `parking_lot`. There's also a `spin` backend if needed for some reason.
 
 ---
 
@@ -226,8 +239,6 @@ fn main() {
     *guard.0 += 1;
 }
 ```
-
-This `LockCollection` can be implemented simply by releasing the currently acquired locks and retrying on failure
 
 ---
 
@@ -305,6 +316,30 @@ unsafe trait OwnedLockable: Lockable {}
 
 ---
 
+## Summary: Preventing Deadlock
+
+ - Using an owned `ThreadKey` type, we can ensure total allocation
+ - Using a `LockCollection`, we can lock multiple mutexes at the same time
+ - The marker trait, `OwnedLockable`, can be guaranteed to not contain duplicates at compile-time
+ - We can check for duplicates at runtime by checking the memory addresses of the locks
+
+---
+
+<!-- _class: lead invert -->
+# Optimizations to HappyLock
+
+---
+
+## Goals: Optimizations
+
+ - Explain how exactly we check for duplicates
+ - Naively implement `LockCollection`
+ - Understand how live-locking hurts total allocation
+ - Rewrite our collections to prevent cyclic wait, which will improve performance
+ - Provide a way to create a user-defined locking order
+
+---
+
 ## `contains_duplicates` (1st attempt)
 
 ```rust
@@ -340,6 +375,20 @@ Time Complexity: O(nlogn)
 
 ---
 
+## RetryingLockCollection
+
+```rust
+struct RetryingLockCollection<L> {
+    data: L,
+}
+```
+
+This will try to lock everything in the collection, and release everything if it fails.
+
+We keep trying until we've locked everything in a row.
+
+---
+
 ## Problem: Live-locking
 
 Although this library is able to successfully prevent deadlocks, livelocks may still be an issue.
@@ -363,17 +412,6 @@ This pattern will probably end eventually, but we should really avoid it, for pe
 
 ---
 
-## Problems with This Approach
-
-- I can't sort a tuple
-  - Don't return them sorted, silly
-- Indexing the locks in the right order
-  - Have `get_ptrs` return a `&dyn RawLock`
-  - Start by locking everything
-  - Then call a separate `guard` method to create the guard
-
----
-
 # New traits
 
 ```rust
@@ -384,33 +422,11 @@ unsafe trait RawLock {
 }
 
 unsafe trait Lockable {  // this is a bad name (LockGroup?)
-    type Guard<'g>;
+    type Guard<'g> where Self: 'g;
     fn get_locks<'a>(&'a self, &mut Vec<&'a dyn RawLock>);
     unsafe fn guard<'g>(&'g self) -> Self::Guard<'g>;
 }
 ```
-
----
-
-## Ok let's get started, oh wait
-
-- self-referential data structures
-  - for best performance: `RefLockCollection`, `BoxedLockCollection`, `OwnedLockCollection`
-- `LockCollection::new_ref` doesn't work without sorting
-  - So as a fallback, provide `RetryingLockCollection`. It doesn't do any sorting, but unlikely to ever acquire the lock
-
----
-
-## Solving self-referential data structures with references
-
-```rust
-struct RefLockCollection<'a, L> {
-    data: &'a L,
-    locks: Vec<&'a dyn RawLock>
-}
-```
-
-But what if I don't want to manage lifetimes?
 
 ---
 
@@ -423,45 +439,50 @@ struct BoxedLockCollection<L> {
 }
 ```
 
-But what if I don't want to do any lock sorting?
+This is the default lock collection in HappyLock
+
+---
+
+## Providing our own lock ordering
+
+ - What if we don't want to do any sorting?
+ - We could make a collection that allows us to define our own order
+ - This requires that no other ordering is used for the locks in that collection
+ - `OwnedLockable` can be used for this
 
 ---
 
 ## Solving self-referential data structures with owned lockables
 
 ```rust
-struct OwnedLockCollection<L> {
+struct OwnedLockCollection<L: OwnedLockable> {
     data: L,
 }
 ```
 
-This doesn't allow immutable references to data, but also doesn't require any sorting
+---
 
-But what if I don't have ownership of the locks?
+## Summary: Optimizations
+
+ - Livelocking causes perpetual locking and unlocking and retries
+ - Locks are sorted by memory address before looking for duplicates
+ - `BoxedLockCollection` sorts in the order of the memory address
+ - `OwnedLockCollection` allows us to define our own lock order
+ - `RetryingLockCollection` has the original retry behavior
 
 ---
 
-## Solving self-referential data structures with retrying locks
-
-```rust
-struct RetryingLockCollection<L> {
-    data: L,
-}
-```
-
-This is what we were trying to avoid earlier
+<!-- _class: lead invert -->
+# Quality of Life Enhancements
 
 ---
 
-## Let's make four different lock collection types that do almost the same thing!
+## Goals: Quality of Life
 
-- `BoxedLockCollection`: The default. Sorts the locks by memory address, and locks in that order. Heap allocation is required.
-
-- `RefLockCollection`: Same as boxed, but requires the caller to manage the lifetimes.
-
-- `RetryingLockCollection`: Mostly cheap to construct, but will usually fail to lock the data if there is any contention.
-
-- `OwnedLockCollection`: The cheapest option. Locks in the order given. No shared references to inner collection.
+ - Try to lock a mutex using a `&mut ThreadKey`
+ - Take inspiration from scoped threads to ensure unlocking
+ - Use marker traits to allow read-only locks
+ - Use traits to implement `get_mut` and `into_inner`
 
 ---
 
@@ -498,6 +519,10 @@ let guard = MUTEX1.lock(&mut key);
 let guard = MUTEX1.lock(&mut key);
 ```
 
+---
+
+## Keyable
+
 The problem is that this also compiles
 
 ```rust
@@ -519,7 +544,15 @@ Let's take inspiration from scoped threads:
 fn scope<'env, F, T>(f: F) -> T
 where
     F: for<'scope> FnOnce(&'scope Scope<'scope, env>) -> T;
+```
 
+The `Drop` implementation of the `Scope` type will join all of the spawned threads. And because we only have a  reference to the `Scope`, we'll never be able to `mem::forget` it.
+
+---
+
+## Scoped Threads
+
+```rust
 let mut a = vec![1, 2, 3];
 let mut x = 0;
 
@@ -537,10 +570,6 @@ scope(|scope| {
 });
 ```
 
-The `Drop` implementation of the `Scope` type will join all of the spawned
-threads. And because we only have a  reference to the `Scope`, we'll never be
-able to `mem::forget` it.
-
 ---
 
 ## Scoped Locks
@@ -549,28 +578,14 @@ Let's try the same thing for locks
 
 ```rust
 let mut key = ThreadKey::get().unwrap();
-let mutex_plus_one = MUTEX.scoped_lock(|guard: &mut i32| *guard + 1);
+let mutex_plus_one = MUTEX.scoped_lock(&mut key, |guard: &mut i32| *guard + 1);
 ```
 
-If you use scoped locks, then you can guarantee that locks will always be
-unlocked (assuming you never immediately abort the thread).
+If you use scoped locks, then you can guarantee that locks will always be unlocked (assuming you never immediately abort the thread).
 
 ---
 
-## RwLocks in collections
-
-This is what I used in HappyLock 0.1:
-
-```rust
-struct ReadLock<'a, T>(&'a RwLock<T>);
-struct WriteLock<'a, T>(&'a RwLock<T>);
-```
-
-**Problem:** This can't be used inside of an `OwnedLockCollection`
-
----
-
-## Allowing reads on `OwnedLockCollection`
+## Allowing reads on `LockCollection`
 
 ```rust
 // update RawLock
@@ -594,38 +609,14 @@ unsafe trait Sharable: Lockable {
 ## Not every lock can be read tho
 
 ```rust
-impl<L: Sharable> OwnedLockable<L> {
+impl<L: Sharable> LockCollection<L> {
     pub fn read<..>(&'g self, key: Key) -> LockGuard<..> { /* ... */ }
 
     pub fn try_read<..>(&'g self, key: Key) -> Option<LockGuard<..>> { /* ... */ }
 
     pub fn unlock_read<..>(guard: LockGuard<..>) { /* ... */ }
 }
-
-// the same methods exist on other lock collections too
 ```
-
----
-
-## Poisoning
-
-```rust
-unsafe impl<L: Lockable + Send + Sync> RawLock for LockCollection<L>
-
-pub struct Poisonable<L: Lockable + RawLock> {
-    inner: L,
-    poisoned: PoisonFlag,
-}
-
-impl<L: Lockable + RawLock> Lockable for Poisonable<L> {
-    type Guard<'g> = Result<PoisonRef<'g, L::Guard>, PoisonErrorRef<'g, L::Guard>>
-        where Self: 'g;
-
-    // and so on...
-}
-```
-
-Allows: `Poisonable<LockCollection>` and `LockCollection<Poisonable>`
 
 ---
 
@@ -642,7 +633,7 @@ trait LockableGetMut: Lockable {
 }
 
 impl<A: LockableGetMut, B: LockableGetMut> LockableGetMut for (A, B) {
-    type Inner = (A::Inner<'a>, B::Inner<'b>);
+    type Inner<'a> = (A::Inner<'a>, B::Inner<'b>);
 
     fn get_mut(&mut self) -> Self::Inner<'_> {
         (self.0.get_mut(), self.1.get_mut())
@@ -651,102 +642,26 @@ impl<A: LockableGetMut, B: LockableGetMut> LockableGetMut for (A, B) {
 ```
 ---
 
-<!--_class: invert lead -->
+## Summary: QoL Enhancements
 
-## What's next?
-
----
-
-## OS Locks
-
-- Using `parking_lot` makes the binary size much larger
-- Unfortunately, it's impossible to implement `RawLock` on the standard library lock primitives
-- Creating a new crate based on a fork of the standard library is hard
-- Solution: create a new library (`sys_locks`), which exposes raw locks from the operating system
-- This is more complicated than you might think
+ - Using `&mut ThreadKey` won't work because someone could `mem::forget` a lock guard
+ - To guarantee unlocking, we can use a scoped API
+ - Marker traits can be used to indicate that a lock can be shared
+ - Traits can also provide other functionality, like `get_mut`
 
 ---
 
-# Convenience Methods
-
-`Mutex::lock_swap`, `lock_clone`, etc would be cool
-
-\
-\
-\
-These methods would still require a `ThreadKey` though
-
-```rust
-let guard = mutex.lock(key);
-let cloned = mutex.lock_clone(); // deadlock
-```
+<!-- _class: lead invert -->
+# The Future: Expanding Cyclic Wait
 
 ---
 
-## `LockCell`
+## Goals: Expanding Cyclic Wait
 
-This would only allow methods to be called which immediately release the lock
-
-This would never require a `ThreadKey`
-
-Could run into bugs:
-
-```rust
-let a: LockCell<i32>;
-let b: LockCell<i32>;
-if a == b {
-    // a and b are no longer equal
-}
-```
-
----
-
-## Readonly Lock Collections
-
-- The original idea behind `Sharable` was to avoid duplicate checking on collections that will only ever be read.
-- Reading can't cause a deadlock? Or so I thought.
-
-From the standard library documentation:
-
-```txt
-// Thread 1              |  // Thread 2
-let _rg1 = lock.read();  |
-                         |  // will block
-                         |  let _wg = lock.write();
-// may deadlock          |
-let _rg2 = lock.read();  |
-```
-
----
-
-## Recursive Trait
-
-Instead of `Sharable`, use a `Recursive` trait:
-
-```rust
-unsafe trait Recursive: Lockable {}
-```
-
-Add a `Readonly` wrapper around collections of recursives:
-
-```rust
-pub struct Readonly<L: Recursive> {
-    inner: L
-}
-```
-
-A `Readonly` collection cannot be exclusively locked.
-
----
-
-## Others
-
-- No standard library
-  - hard, because of thread local, and allocation being required for lock collections
-- Condvar and Barrier
-  - these have completely different deadlocking rules. someone else should figure this out
-- LazyLock and OnceLock
-  - These can deadlock, but it's very hard to do so accidentally
+ - Show that we sometimes need partial allocation
+ - Idealize how cyclic wait could be used in these scenarios
+ - Design an API that could use typestate to support cyclic wait and partial allocation
+ - Ensure that the `ThreadKey` is not used while multiple partially allocated guards are active
 
 ---
 
@@ -872,7 +787,10 @@ But where do we store the `ThreadKey`?
 
 ```rust
 // This type will hold the ThreadKey
-struct LockIteratorGuard<'a, 'key, L, Key: Keyable + 'key>
+struct LockIteratorGuard<'a, L> {
+    collection: &'a OwnedLockCollection<L>,
+    thread_key: ThreadKey,
+}
 ```
 
 ---
@@ -896,6 +814,16 @@ LockIteratorGuard::next<'a>(&'a mut self) -> LockIterator<'a, L::Next>
 ```
 
 ---
-<!--_class: invert lead -->
 
+## Summary: Expanding Cyclic Wait
+
+ - Partial allocation is needed in situations like skip lists
+ - Cyclic wait can be used as a backup in these situations
+ - Typestate allows us to iterate over the elements of a tuple
+ - A `ThreadKey` must be stored somewhere while the partially allocated guards are active
+ - Immutable references to the `ThreadKey` can prove that the `ThreadKey` is not used until *all* of the guards are dropped
+
+---
+
+<!--_class: invert lead -->
 ## The End
