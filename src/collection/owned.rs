@@ -503,7 +503,7 @@ impl<L: LockableIntoInner> OwnedLockCollection<L> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{Mutex, RwLock, ThreadKey};
+	use crate::{LockCollection, Mutex, RwLock, ThreadKey};
 
 	#[test]
 	fn get_mut_applies_changes() {
@@ -777,5 +777,13 @@ mod tests {
 				.get_mut(),
 			42
 		);
+	}
+
+	#[test]
+	fn duplicates_detected() {
+		let collection1 = OwnedLockCollection::new([Mutex::new(5), Mutex::new(10)]);
+		let collection2 = LockCollection::try_new((&collection1, &collection1));
+
+		assert!(collection2.is_none());
 	}
 }
