@@ -20,11 +20,12 @@ pub type ParkingMutex<T> = Mutex<T, parking_lot::RawMutex>;
 /// A mutual exclusion primitive useful for protecting shared data, which
 /// cannot deadlock.
 ///
-/// This mutex will block threads waiting for the lock to become available.
-/// Each mutex has a type parameter which represents the data that it is
-/// protecting. The data can only be accessed through the [`MutexGuard`]s
-/// returned from [`lock`] and [`try_lock`], which guarantees that the data is
-/// only ever accessed when the mutex is locked.
+/// This mutex will block threads waiting for the lock to become available. The
+/// mutex can be created via a `new` constructor. Each mutex has a type
+/// parameter which represents the data that it is protecting. The data can
+/// only be accessed through the [`MutexGuard`]s returned from [`lock`] and
+/// [`try_lock`], which guarantees that the data is only ever accessed when
+/// the mutex is locked.
 ///
 /// Locking the mutex on a thread that already locked it is impossible, due to
 /// the requirement of the [`ThreadKey`]. Therefore, this will never deadlock.
@@ -133,18 +134,37 @@ pub struct Mutex<T: ?Sized, R> {
 	data: UnsafeCell<T>,
 }
 
-/// A reference to a mutex that unlocks it when dropped.
+/// An RAII implementation of a “scoped lock” of a mutex. When this structure
+/// is dropped (falls out of scope), the lock will be unlocked.
 ///
-/// This is similar to [`MutexGuard`], except it does not hold a [`Keyable`].
-pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(&'a Mutex<T, R>, PhantomData<R::GuardMarker>);
-
-/// An RAII implementation of a “scoped lock” of a mutex.
-///
-/// When this structure is dropped (falls out of scope), the lock will be
-/// unlocked.
+/// The data protected by the mutex can be accessed through this guard via its
+/// [`Deref`] and [`DerefMut`] implementations.
 ///
 /// This is created by calling the [`lock`] and [`try_lock`] methods on [`Mutex`]
 ///
+/// This is similar to the [`MutexGuard`] type, except it does not hold a
+/// [`ThreadKey`].
+///
+/// [`lock`]: `Mutex::lock`
+/// [`try_lock`]: `Mutex::try_lock`
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
+pub struct MutexRef<'a, T: ?Sized + 'a, R: RawMutex>(&'a Mutex<T, R>, PhantomData<R::GuardMarker>);
+
+/// An RAII implementation of a “scoped lock” of a mutex. When this structure
+/// is dropped (falls out of scope), the lock will be unlocked.
+///
+/// The data protected by the mutex can be accessed through this guard via its
+/// [`Deref`] and [`DerefMut`] implementations.
+///
+/// This is created by calling the [`lock`] and [`try_lock`] methods on [`Mutex`]
+///
+/// This guard holds on to a [`ThreadKey`], which ensures that nothing else is
+/// locked until this guard is dropped. The [`ThreadKey`] can be reacquired
+/// using [`Mutex::unlock`].
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
 /// [`lock`]: `Mutex::lock`
 /// [`try_lock`]: `Mutex::try_lock`
 //

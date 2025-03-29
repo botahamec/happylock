@@ -4,9 +4,7 @@ use std::mem::MaybeUninit;
 ///
 /// # Safety
 ///
-/// A deadlock must never occur. The `unlock` method must correctly unlock the
-/// data. The `get_ptrs` method must be implemented correctly. The `Output`
-/// must be unlocked when it is dropped.
+/// A deadlock must never occur when using these methods correctly.
 //
 // Why not use a RawRwLock? Because that would be semantically incorrect, and I
 // don't want an INIT or GuardMarker associated item.
@@ -24,8 +22,8 @@ pub unsafe trait RawLock {
 	/// # Safety
 	///
 	/// It is undefined behavior to use this without ownership or mutable
-	/// access to the [`ThreadKey`], which should last as long as the return
-	/// value is alive.
+	/// access to the [`ThreadKey`], which should last as long as the lock is
+	/// held.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn raw_write(&self);
@@ -37,8 +35,8 @@ pub unsafe trait RawLock {
 	/// # Safety
 	///
 	/// It is undefined behavior to use this without ownership or mutable
-	/// access to the [`ThreadKey`], which should last as long as the return
-	/// value is alive.
+	/// access to the [`ThreadKey`], which should last as long as the lock is
+	/// held.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn raw_try_write(&self) -> bool;
@@ -47,7 +45,8 @@ pub unsafe trait RawLock {
 	///
 	/// # Safety
 	///
-	/// It is undefined behavior to use this if the lock is not acquired
+	/// It is undefined behavior to use this if the lock is not acquired by the
+	/// calling thread.
 	unsafe fn raw_unlock_write(&self);
 
 	/// Blocks until the data the lock protects can be safely read.
@@ -59,8 +58,8 @@ pub unsafe trait RawLock {
 	/// # Safety
 	///
 	/// It is undefined behavior to use this without ownership or mutable
-	/// access to the [`ThreadKey`], which should last as long as the return
-	/// value is alive.
+	/// access to the [`ThreadKey`], which should last as long as the lock is
+	/// held.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn raw_read(&self);
@@ -76,8 +75,8 @@ pub unsafe trait RawLock {
 	/// # Safety
 	///
 	/// It is undefined behavior to use this without ownership or mutable
-	/// access to the [`ThreadKey`], which should last as long as the return
-	/// value is alive.
+	/// access to the [`ThreadKey`], which should last as long as the lock is
+	/// held.
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
 	unsafe fn raw_try_read(&self) -> bool;
@@ -86,7 +85,8 @@ pub unsafe trait RawLock {
 	///
 	/// # Safety
 	///
-	/// It is undefined behavior to use this if the read lock is not acquired
+	/// It is undefined behavior to use this if the read lock is not held by the
+	/// calling thread.
 	unsafe fn raw_unlock_read(&self);
 }
 
@@ -114,6 +114,7 @@ pub unsafe trait Lockable {
 	where
 		Self: 'g;
 
+	/// A reference to the protected data
 	type DataMut<'a>
 	where
 		Self: 'a;
@@ -137,6 +138,13 @@ pub unsafe trait Lockable {
 	#[must_use]
 	unsafe fn guard(&self) -> Self::Guard<'_>;
 
+	/// Returns a mutable reference to the data protected by this lock.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked
+	/// exclusively before calling this function. The locks must not be unlocked
+	/// until the lifetime of this reference ends.
 	#[must_use]
 	unsafe fn data_mut(&self) -> Self::DataMut<'_>;
 }
@@ -155,6 +163,7 @@ pub unsafe trait Sharable: Lockable {
 	where
 		Self: 'g;
 
+	/// An immutable reference to the protected data
 	type DataRef<'a>
 	where
 		Self: 'a;
@@ -170,6 +179,13 @@ pub unsafe trait Sharable: Lockable {
 	#[must_use]
 	unsafe fn read_guard(&self) -> Self::ReadGuard<'_>;
 
+	/// Creates an immutable reference to the data that is protected by this lock.
+	///
+	/// # Safety
+	///
+	/// All locks given by calling [`Lockable::get_ptrs`] must be locked using
+	/// [`RawLock::raw_read`] before calling this function. The locks must not be
+	/// unlocked until the lifetime of this reference ends.
 	#[must_use]
 	unsafe fn data_ref(&self) -> Self::DataRef<'_>;
 }

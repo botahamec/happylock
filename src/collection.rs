@@ -16,12 +16,11 @@ pub(crate) mod utils;
 ///
 /// The data in this collection is guaranteed to not contain duplicates because
 /// `L` must always implement [`OwnedLockable`]. The underlying data may not be
-/// immutably referenced and locked. Because of this, there is no need for
-/// sorting the locks in the collection, or checking for duplicates, because it
-/// can be guaranteed that until the underlying collection is mutated (which
-/// requires releasing all acquired locks in the collection to do), then the
-/// locks will stay in the same order and be locked in that order, preventing
-/// cyclic wait.
+/// immutably referenced. Because of this, there is no need for sorting the
+/// locks in the collection, or checking for duplicates, because it can be
+/// guaranteed that until the underlying collection is mutated (which requires
+/// releasing all acquired locks in the collection to do), then the locks will
+/// stay in the same order and be locked in that order, preventing cyclic wait.
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
@@ -30,6 +29,7 @@ pub(crate) mod utils;
 // collection exist
 #[derive(Debug)]
 pub struct OwnedLockCollection<L> {
+	// TODO: rename to child
 	data: L,
 }
 
@@ -42,7 +42,7 @@ pub struct OwnedLockCollection<L> {
 /// Upon construction, it must be confirmed that the collection contains no
 /// duplicate locks. This can be done by either using [`OwnedLockable`] or by
 /// checking. Regardless of how this is done, the locks will be sorted by their
-/// memory address before locking them. The sorted order of the locks is stored
+/// memory address before locking them. The sorted order of the locks is cached
 /// within this collection.
 ///
 /// Unlike [`BoxedLockCollection`], this type does not allocate memory for the
@@ -72,7 +72,7 @@ pub struct RefLockCollection<'a, L> {
 /// Upon construction, it must be confirmed that the collection contains no
 /// duplicate locks. This can be done by either using [`OwnedLockable`] or by
 /// checking. Regardless of how this is done, the locks will be sorted by their
-/// memory address before locking them. The sorted order of the locks is stored
+/// memory address before locking them. The sorted order of the locks is cached
 /// within this collection.
 ///
 /// Unlike [`RefLockCollection`], this is a self-referential type which boxes
@@ -95,18 +95,15 @@ pub struct BoxedLockCollection<L> {
 /// can be safely locked without causing a deadlock.
 ///
 /// The data in this collection is guaranteed to not contain duplicates, but it
-/// also not be sorted. In some cases the lack of sorting can increase
+/// also is not sorted. In some cases the lack of sorting can increase
 /// performance. However, in most cases, this collection will be slower. Cyclic
 /// wait is not guaranteed here, so the locking algorithm must release all its
 /// locks if one of the lock attempts blocks. This results in wasted time and
 /// potential [livelocking].
 ///
 /// However, one case where this might be faster than [`RefLockCollection`] is
-/// when the first lock in the collection is always the first in any
-/// collection, and the other locks in the collection are always locked after
-/// that first lock is acquired. This means that as soon as it is locked, there
-/// will be no need to unlock it later on subsequent lock attempts, because
-/// they will always succeed.
+/// when cyclic wait is ensured manually. This will prevent the need for
+/// subsequent unlocking and re-locking.
 ///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`OwnedLockable`]: `crate::lockable::OwnedLockable`
@@ -118,8 +115,19 @@ pub struct RetryingLockCollection<L> {
 	data: L,
 }
 
-/// A RAII guard for a generic [`Lockable`] type.
+/// A RAII guard for a generic [`Lockable`] type. When this structure is
+/// dropped (falls out of scope), the locks will be unlocked.
 ///
+/// The data protected by the mutex can be accessed through this guard via its
+/// [`Deref`] and [`DerefMut`] implementations.
+///
+/// Several lock collections can be used to create this type. Specifically,
+/// [`BoxedLockCollection`], [`RefLockCollection`], [`OwnedLockCollection`], and
+/// [`RetryingLockCollection`]. It is created using the methods, `lock`,
+/// `try_lock`, `read`, and `try_read`.
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
 /// [`Lockable`]: `crate::lockable::Lockable`
 pub struct LockGuard<Guard> {
 	guard: Guard,

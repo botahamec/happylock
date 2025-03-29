@@ -161,28 +161,28 @@ impl<L> Poisonable<L> {
 		}
 	}
 
-	/// Determines whether the mutex is poisoned.
+	/// Determines whether the `Poisonable` is poisoned.
 	///
-	/// If another thread is active, the mutex can still become poisoned at any
-	/// time. You should not trust a `false` value for program correctness
+	/// If another thread is active, the `Poisonable` can still become poisoned at
+	/// any time. You should not trust a `false` value for program correctness
 	/// without additional synchronization.
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(0)));
-	/// let c_mutex = Arc::clone(&mutex);
+	/// let mutex = Poisonable::new(Mutex::new(0));
 	///
-	/// let _ = thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let _lock = c_mutex.lock(key).unwrap();
-	///     panic!(); // the mutex gets poisoned
-	/// }).join();
+	/// thread::scope(|s| {
+	///     let r = s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let _lock = mutex.lock(key).unwrap();
+	///         panic!(); // the mutex gets poisoned
+	///     }).join();
+	/// });
 	///
 	/// assert_eq!(mutex.is_poisoned(), true);
 	/// ```
@@ -202,19 +202,19 @@ impl<L> Poisonable<L> {
 	/// # Examples
 	///
 	/// ```
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(0)));
-	/// let c_mutex = Arc::clone(&mutex);
+	/// let mutex = Poisonable::new(Mutex::new(0));
 	///
-	/// let _ = thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let _lock = c_mutex.lock(key).unwrap();
-	///     panic!(); // the mutex gets poisoned
-	/// }).join();
+	/// thread::scope(|s| {
+	///     let r = s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let _lock = mutex.lock(key).unwrap();
+	///         panic!(); // the mutex gets poisoned
+	///     }).join();
+	/// });
 	///
 	/// assert_eq!(mutex.is_poisoned(), true);
 	///
@@ -233,9 +233,6 @@ impl<L> Poisonable<L> {
 	}
 
 	/// Consumes this `Poisonable`, returning the underlying lock.
-	///
-	/// This consumes the `Poisonable` and returns ownership of the lock, which
-	/// means that the `Poisonable` can still be `RefUnwindSafe`.
 	///
 	/// # Errors
 	///
@@ -259,9 +256,6 @@ impl<L> Poisonable<L> {
 	}
 
 	/// Returns a mutable reference to the underlying lock.
-	///
-	/// This can be implemented while still being `RefUnwindSafe` because
-	/// it requires a mutable reference.
 	///
 	/// # Errors
 	///
@@ -287,7 +281,6 @@ impl<L> Poisonable<L> {
 	}
 
 	// NOTE: `child_ref` isn't implemented because it would make this not `RefUnwindSafe`
-	//
 }
 
 impl<L: Lockable> Poisonable<L> {
@@ -366,30 +359,30 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	/// Acquires the lock, blocking the current thread until it is ok to do so.
 	///
 	/// This function will block the current thread until it is available to
-	/// acquire the mutex. Upon returning, the thread is the only thread with
+	/// acquire the lock. Upon returning, the thread is the only thread with
 	/// the lock held. An RAII guard is returned to allow scoped unlock of the
 	/// lock. When the guard goes out of scope, the mutex will be unlocked.
 	///
 	/// # Errors
 	///
-	/// If another use of this mutex panicked while holding the mutex, then
+	/// If another use of this lock panicked while holding the mutex, then
 	/// this call will return an error once the mutex is acquired.
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(0)));
-	/// let c_mutex = Arc::clone(&mutex);
+	/// let mutex = Poisonable::new(Mutex::new(0));
 	///
-	/// thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     *c_mutex.lock(key).unwrap() = 10;
-	/// }).join().expect("thread::spawn failed");
+	/// thread::scope(|s| {
+	///     let r = s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         *mutex.lock(key).unwrap() = 10;
+	///     }).join();
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
@@ -411,33 +404,33 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	///
 	/// # Errors
 	///
-	/// If another user of this mutex panicked while holding the mutex, then
-	/// this call will return the [`Poisoned`] error if the mutex would
-	/// otherwise be acquired.
+	/// If another user of this lock panicked while holding the lock, then this
+	/// call will return the [`Poisoned`] error if the lock would otherwise be
+	/// acquired.
 	///
-	/// If the mutex could not be acquired because it is already locked, then
+	/// If the lock could not be acquired because it is already locked, then
 	/// this call will return the [`WouldBlock`] error.
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(0)));
-	/// let c_mutex = Arc::clone(&mutex);
+	/// let mutex = Poisonable::new(Mutex::new(0));
 	///
-	/// thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let mut lock = c_mutex.try_lock(key);
-	///     if let Ok(mut mutex) = lock {
-	///         *mutex = 10;
-	///     } else {
-	///         println!("try_lock failed");
-	///     }
-	/// }).join().expect("thread::spawn failed");
+	/// thread::scope(|s| {
+	///     s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let mut lock = mutex.try_lock(key);
+	///         if let Ok(mut mutex) = lock {
+	///             *mutex = 10;
+	///         } else {
+	///             println!("try_lock failed");
+	///         }
+	///     });
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key).unwrap(), 10);
@@ -456,6 +449,10 @@ impl<L: Lockable + RawLock> Poisonable<L> {
 	}
 
 	/// Consumes the [`PoisonGuard`], and consequently unlocks its `Poisonable`.
+	///
+	/// This function is equivalent to calling [`drop`] on the guard, except that
+	/// it returns the key that was used to create it. Alternatively, the guard
+	/// will be automatically dropped when it goes out of scope.
 	///
 	/// # Examples
 	///
@@ -556,28 +553,31 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	///
 	/// # Errors
 	///
-	/// If another use of this lock panicked while holding the lock, then
-	/// this call will return an error once the lock is acquired.
+	/// This function will return an error if the `Poisonable` is poisoned. A
+	/// `Poisonable` is poisoned whenever a thread panics while holding a lock.
+	/// The failure will occur immediately after the lock has been acquired. The
+	/// acquired lock guard will be contained in the returned error.
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{RwLock, Poisonable, ThreadKey};
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock = Arc::new(Poisonable::new(RwLock::new(0)));
-	/// let c_lock = Arc::clone(&lock);
+	/// let lock = Poisonable::new(RwLock::new(0));
 	///
 	/// let n = lock.read(key).unwrap();
 	/// assert_eq!(*n, 0);
 	///
-	/// thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     assert!(c_lock.read(key).is_ok());
-	/// }).join().expect("thread::spawn failed");
+	/// thread::scope(|s| {
+	///     s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let r = lock.read(key);
+	///         assert!(r.is_ok());
+	///     });
+	/// });
 	/// ```
 	pub fn read(&self, key: ThreadKey) -> PoisonResult<PoisonGuard<'_, L::ReadGuard<'_>>> {
 		unsafe {
@@ -586,13 +586,12 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 		}
 	}
 
-	/// Attempts to acquire the lock with shared read access.
+	/// Attempts to acquire the lock with shared read access, without blocking the
+	/// thread.
 	///
 	/// If the access could not be granted at this time, then `Err` is returned.
 	/// Otherwise, an RAII guard is returned which will release the shared access
 	/// when it is dropped.
-	///
-	/// This function does not block.
 	///
 	/// This function does not provide any guarantees with respect to the ordering
 	/// of whether contentious readers or writers will acquire the lock first.
@@ -600,9 +599,9 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	/// # Errors
 	///
 	/// This function will return the [`Poisoned`] error if the lock is
-	/// poisoned. A [`Poisonable`] is poisoned whenever a writer panics while
-	/// holding an exclusive lock. `Poisoned` will only be returned if the lock
-	/// would have otherwise been acquired.
+	/// poisoned. A [`Poisonable`] is poisoned whenever a thread panics while
+	/// holding a lock. `Poisoned` will only be returned if the lock would have
+	/// otherwise been acquired.
 	///
 	/// This function will return the [`WouldBlock`] error if the lock could
 	/// not be acquired because it was already locked exclusively.
@@ -623,6 +622,7 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	///
 	/// [`Poisoned`]: `TryLockPoisonableError::Poisoned`
 	/// [`WouldBlock`]: `TryLockPoisonableError::WouldBlock`
+	// TODO don't poison when holding shared lock
 	pub fn try_read(&self, key: ThreadKey) -> TryLockPoisonableResult<'_, L::ReadGuard<'_>> {
 		unsafe {
 			if self.inner.raw_try_read() {
@@ -633,7 +633,11 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 		}
 	}
 
-	/// Consumes the [`PoisonGuard`], and consequently unlocks its underlying lock.
+	/// Consumes the [`PoisonGuard`], and consequently unlocks its `Poisonable`.
+	///
+	/// This function is equivalent to calling [`drop`] on the guard, except that
+	/// it returns the key that was used to create it. Alternatively, the guard
+	/// will be automatically dropped when it goes out of scope.
 	///
 	/// # Examples
 	///
@@ -641,9 +645,11 @@ impl<L: Sharable + RawLock> Poisonable<L> {
 	/// use happylock::{ThreadKey, RwLock, Poisonable};
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock = Poisonable::new(RwLock::new(0));
+	/// let lock = Poisonable::new(RwLock::new(20));
 	///
 	/// let mut guard = lock.read(key).unwrap();
+	/// assert_eq!(*guard, 20);
+	///
 	/// let key = Poisonable::<RwLock<_>>::unlock_read(guard);
 	/// ```
 	pub fn unlock_read<'flag>(guard: PoisonGuard<'flag, L::ReadGuard<'flag>>) -> ThreadKey {
@@ -658,7 +664,8 @@ impl<L: LockableIntoInner> Poisonable<L> {
 	/// # Errors
 	///
 	/// If another user of this lock panicked while holding the lock, then this
-	/// call will return an error instead.
+	/// call will return an error instead. A `Poisonable` is poisoned whenever a
+	/// thread panics while holding a lock.
 	///
 	/// # Examples
 	///
@@ -683,7 +690,8 @@ impl<L: LockableGetMut + RawLock> Poisonable<L> {
 	/// # Errors
 	///
 	/// If another user of this lock panicked while holding the lock, then
-	/// this call will return an error instead.
+	/// this call will return an error instead. A `Poisonable` is poisoned
+	/// whenever a thread panics while holding a lock.
 	///
 	/// # Examples
 	///

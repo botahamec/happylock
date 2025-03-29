@@ -197,16 +197,11 @@ impl<L> BoxedLockCollection<L> {
 	/// ```
 	/// use happylock::{Mutex, ThreadKey, LockCollection};
 	///
-	/// let data1 = Mutex::new(42);
-	/// let data2 = Mutex::new("");
-	///
-	/// // data1 and data2 refer to distinct mutexes, so this won't panic
-	/// let data = (&data1, &data2);
-	/// let lock = LockCollection::try_new(&data).unwrap();
+	/// let collection = LockCollection::try_new([Mutex::new(42), Mutex::new(1)]).unwrap();
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let guard = lock.into_child().0.lock(key);
-	/// assert_eq!(*guard, 42);
+	/// let mutex = &collection.into_child()[0];
+	/// mutex.scoped_lock(key, |guard| assert_eq!(*guard, 42));
 	/// ```
 	#[must_use]
 	pub fn into_child(mut self) -> L {
@@ -232,16 +227,13 @@ impl<L> BoxedLockCollection<L> {
 	/// ```
 	/// use happylock::{Mutex, ThreadKey, LockCollection};
 	///
-	/// let data1 = Mutex::new(42);
-	/// let data2 = Mutex::new("");
+	/// let collection = LockCollection::try_new([Mutex::new(42), Mutex::new(1)]).unwrap();
 	///
-	/// // data1 and data2 refer to distinct mutexes, so this won't panic
-	/// let data = (&data1, &data2);
-	/// let lock = LockCollection::try_new(&data).unwrap();
-	///
-	/// let key = ThreadKey::get().unwrap();
-	/// let guard = lock.child().0.lock(key);
-	/// assert_eq!(*guard, 42);
+	/// let mut key = ThreadKey::get().unwrap();
+	/// let mutex1 = &collection.child()[0];
+	/// let mutex2 = &collection.child()[1];
+	/// mutex1.scoped_lock(&mut key, |guard| assert_eq!(*guard, 42));
+	/// mutex2.scoped_lock(&mut key, |guard| assert_eq!(*guard, 1));
 	/// ```
 	#[must_use]
 	pub fn child(&self) -> &L {
@@ -381,7 +373,8 @@ impl<L: Lockable> BoxedLockCollection<L> {
 		scoped_try_write(self, key, f)
 	}
 
-	/// Locks the collection
+	/// Locks the collection, blocking the current thread until it can be
+	/// acquired.
 	///
 	/// This function returns a guard that can be used to access the underlying
 	/// data. When the guard is dropped, the locks in the collection are also

@@ -8,9 +8,6 @@ use crate::ThreadKey;
 
 mod rwlock;
 
-mod read_lock;
-mod write_lock;
-
 mod read_guard;
 mod write_guard;
 
@@ -39,7 +36,7 @@ pub type ParkingRwLock<T> = RwLock<T, parking_lot::RawRwLock>;
 /// methods) to allow access to the content of the lock.
 ///
 /// Locking the mutex on a thread that already locked it is impossible, due to
-/// the requirement of the [`ThreadKey`]. Therefore, this will never deadlock.
+/// the requirement of the [`ThreadKey`]. This will never deadlock.
 ///
 /// [`ThreadKey`]: `crate::ThreadKey`
 /// [`Mutex`]: `crate::mutex::Mutex`
@@ -51,37 +48,37 @@ pub struct RwLock<T: ?Sized, R> {
 	data: UnsafeCell<T>,
 }
 
-/// Grants read access to an [`RwLock`]
+/// RAII structure that unlocks the shared read access to a [`RwLock`] when
+/// dropped.
 ///
-/// This structure is designed to be used in a [`LockCollection`] to indicate
-/// that only read access is needed to the data.
+/// This structure is created when the [`RwLock`] is put in a wrapper type,
+/// such as [`LockCollection`], and a read-only guard is obtained through the
+/// wrapper.
 ///
+/// This is similar to [`RwLockReadGuard`], except it does not hold a
+/// [`ThreadKey`].
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
 /// [`LockCollection`]: `crate::LockCollection`
-#[repr(transparent)]
-struct ReadLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
-
-/// Grants write access to an [`RwLock`]
-///
-/// This structure is designed to be used in a [`LockCollection`] to indicate
-/// that write access is needed to the data.
-///
-/// [`LockCollection`]: `crate::LockCollection`
-#[repr(transparent)]
-struct WriteLock<'l, T: ?Sized, R>(&'l RwLock<T, R>);
-
-/// RAII structure that unlocks the shared read access to a [`RwLock`]
-///
-/// This is similar to [`RwLockReadRef`], except it does not hold a
-/// [`Keyable`].
 pub struct RwLockReadRef<'a, T: ?Sized, R: RawRwLock>(
 	&'a RwLock<T, R>,
 	PhantomData<R::GuardMarker>,
 );
 
-/// RAII structure that unlocks the exclusive write access to a [`RwLock`]
+/// RAII structure that unlocks the exclusive write access to a [`RwLock`] when
+/// dropped.
 ///
-/// This is similar to [`RwLockWriteRef`], except it does not hold a
-/// [`Keyable`].
+/// This structure is created when the [`RwLock`] is put in a wrapper type,
+/// such as [`LockCollection`], and a mutable guard is obtained through the
+/// wrapper.
+///
+/// This is similar to [`RwLockWriteGuard`], except it does not hold a
+/// [`ThreadKey`].
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
+/// [`LockCollection`]: `crate::LockCollection`
 pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
 	&'a RwLock<T, R>,
 	PhantomData<R::GuardMarker>,
@@ -93,6 +90,12 @@ pub struct RwLockWriteRef<'a, T: ?Sized, R: RawRwLock>(
 /// This structure is created by the [`read`] and [`try_read`] methods on
 /// [`RwLock`].
 ///
+/// This guard holds a [`ThreadKey`] for its entire lifetime. Therefore, a new
+/// lock cannot be acquired until this one is dropped. The [`ThreadKey`] can be
+/// reacquired using [`RwLock::unlock_read`].
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
 /// [`read`]: `RwLock::read`
 /// [`try_read`]: `RwLock::try_read`
 pub struct RwLockReadGuard<'a, T: ?Sized, R: RawRwLock> {
@@ -106,6 +109,12 @@ pub struct RwLockReadGuard<'a, T: ?Sized, R: RawRwLock> {
 /// This structure is created by the [`write`] and [`try_write`] methods on
 /// [`RwLock`]
 ///
+/// This guard holds a [`ThreadKey`] for its entire lifetime. Therefor, a new
+/// lock cannot be acquired until this one is dropped. The [`ThreadKey`] can be
+/// reacquired using [`RwLock::unlock_write`].
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
 /// [`try_write`]: `RwLock::try_write`
 pub struct RwLockWriteGuard<'a, T: ?Sized, R: RawRwLock> {
 	rwlock: RwLockWriteRef<'a, T, R>,
@@ -114,13 +123,9 @@ pub struct RwLockWriteGuard<'a, T: ?Sized, R: RawRwLock> {
 
 #[cfg(test)]
 mod tests {
-	use crate::lockable::Lockable;
-	use crate::lockable::RawLock;
 	use crate::LockCollection;
 	use crate::RwLock;
 	use crate::ThreadKey;
-
-	use super::*;
 
 	#[test]
 	fn unlocked_when_initialized() {
@@ -129,112 +134,6 @@ mod tests {
 
 		assert!(!lock.is_locked());
 		assert!(lock.try_write(key).is_ok());
-	}
-
-	#[test]
-	fn read_lock_unlocked_when_initialized() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
-		let reader = ReadLock::new(&lock);
-
-		assert!(reader.try_lock(key).is_ok());
-	}
-
-	#[test]
-	fn read_lock_from_works() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::from("Hello, world!");
-		let reader = ReadLock::from(&lock);
-
-		let guard = reader.lock(key);
-		assert_eq!(*guard, "Hello, world!");
-	}
-
-	#[test]
-	fn read_lock_scoped_works() {
-		let mut key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new(42);
-		let reader = ReadLock::new(&lock);
-
-		reader.scoped_lock(&mut key, |num| assert_eq!(*num, 42));
-	}
-
-	#[test]
-	fn read_lock_scoped_try_fails_during_write() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new(42);
-		let reader = ReadLock::new(&lock);
-		let guard = lock.write(key);
-
-		std::thread::scope(|s| {
-			s.spawn(|| {
-				let key = ThreadKey::get().unwrap();
-				let r = reader.scoped_try_lock(key, |_| {});
-				assert!(r.is_err());
-			});
-		});
-
-		drop(guard);
-	}
-
-	#[test]
-	fn write_lock_unlocked_when_initialized() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
-		let writer = WriteLock::new(&lock);
-
-		assert!(writer.try_lock(key).is_ok());
-	}
-
-	#[test]
-	#[ignore = "We've removed ReadLock"]
-	fn read_lock_get_ptrs() {
-		let rwlock = RwLock::new(5);
-		let readlock = ReadLock::new(&rwlock);
-		let mut lock_ptrs = Vec::new();
-		readlock.get_ptrs(&mut lock_ptrs);
-
-		assert_eq!(lock_ptrs.len(), 1);
-		assert!(std::ptr::addr_eq(lock_ptrs[0], &readlock));
-	}
-
-	#[test]
-	#[ignore = "We've removed WriteLock"]
-	fn write_lock_get_ptrs() {
-		let rwlock = RwLock::new(5);
-		let writelock = WriteLock::new(&rwlock);
-		let mut lock_ptrs = Vec::new();
-		writelock.get_ptrs(&mut lock_ptrs);
-
-		assert_eq!(lock_ptrs.len(), 1);
-		assert!(std::ptr::addr_eq(lock_ptrs[0], &writelock));
-	}
-
-	#[test]
-	fn write_lock_scoped_works() {
-		let mut key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new(42);
-		let writer = WriteLock::new(&lock);
-
-		writer.scoped_lock(&mut key, |num| assert_eq!(*num, 42));
-	}
-
-	#[test]
-	fn write_lock_scoped_try_fails_during_write() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new(42);
-		let writer = WriteLock::new(&lock);
-		let guard = lock.write(key);
-
-		std::thread::scope(|s| {
-			s.spawn(|| {
-				let key = ThreadKey::get().unwrap();
-				let r = writer.scoped_try_lock(key, |_| {});
-				assert!(r.is_err());
-			});
-		});
-
-		drop(guard);
 	}
 
 	#[test]
@@ -249,35 +148,11 @@ mod tests {
 	}
 
 	#[test]
-	fn locked_after_using_read_lock() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
-		let reader = ReadLock::new(&lock);
-
-		let guard = reader.lock(key);
-
-		assert!(lock.is_locked());
-		drop(guard)
-	}
-
-	#[test]
 	fn locked_after_write() {
 		let key = ThreadKey::get().unwrap();
 		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
 
 		let guard = lock.write(key);
-
-		assert!(lock.is_locked());
-		drop(guard)
-	}
-
-	#[test]
-	fn locked_after_using_write_lock() {
-		let key = ThreadKey::get().unwrap();
-		let lock: crate::RwLock<_> = RwLock::new("Hello, world!");
-		let writer = WriteLock::new(&lock);
-
-		let guard = writer.lock(key);
 
 		assert!(lock.is_locked());
 		drop(guard)
@@ -424,112 +299,6 @@ mod tests {
 	}
 
 	#[test]
-	fn unlock_read_lock() {
-		let key = ThreadKey::get().unwrap();
-		let lock = crate::RwLock::new("Hello, world");
-		let reader = ReadLock::new(&lock);
-
-		let guard = reader.lock(key);
-		let key = ReadLock::unlock(guard);
-
-		lock.write(key);
-	}
-
-	#[test]
-	fn unlock_write_lock() {
-		let key = ThreadKey::get().unwrap();
-		let lock = crate::RwLock::new("Hello, world");
-		let writer = WriteLock::from(&lock);
-
-		let guard = writer.lock(key);
-		let key = WriteLock::unlock(guard);
-
-		lock.write(key);
-	}
-
-	#[test]
-	#[ignore = "We've removed ReadLock"]
-	fn read_lock_in_collection() {
-		let mut key = ThreadKey::get().unwrap();
-		let lock = crate::RwLock::new("hi");
-		let collection = LockCollection::try_new(ReadLock::new(&lock)).unwrap();
-
-		collection.scoped_lock(&mut key, |guard| {
-			assert_eq!(*guard, "hi");
-		});
-		collection.scoped_read(&mut key, |guard| {
-			assert_eq!(*guard, "hi");
-		});
-		assert!(collection
-			.scoped_try_lock(&mut key, |guard| {
-				assert_eq!(*guard, "hi");
-			})
-			.is_ok());
-		assert!(collection
-			.scoped_try_read(&mut key, |guard| {
-				assert_eq!(*guard, "hi");
-			})
-			.is_ok());
-
-		let guard = collection.lock(key);
-		assert_eq!(**guard, "hi");
-
-		let key = LockCollection::<ReadLock<_, _>>::unlock(guard);
-		let guard = collection.read(key);
-		assert_eq!(**guard, "hi");
-
-		let key = LockCollection::<ReadLock<_, _>>::unlock(guard);
-		let guard = lock.write(key);
-
-		std::thread::scope(|s| {
-			s.spawn(|| {
-				let key = ThreadKey::get().unwrap();
-				let guard = collection.try_lock(key);
-				assert!(guard.is_err());
-			});
-			s.spawn(|| {
-				let key = ThreadKey::get().unwrap();
-				let guard = collection.try_read(key);
-				assert!(guard.is_err());
-			});
-		});
-
-		drop(guard);
-	}
-
-	#[test]
-	fn write_lock_in_collection() {
-		let mut key = ThreadKey::get().unwrap();
-		let lock = crate::RwLock::new("hi");
-		let collection = LockCollection::try_new(WriteLock::new(&lock)).unwrap();
-
-		collection.scoped_lock(&mut key, |guard| {
-			assert_eq!(*guard, "hi");
-		});
-		assert!(collection
-			.scoped_try_lock(&mut key, |guard| {
-				assert_eq!(*guard, "hi");
-			})
-			.is_ok());
-
-		let guard = collection.lock(key);
-		assert_eq!(**guard, "hi");
-
-		let key = LockCollection::<WriteLock<_, _>>::unlock(guard);
-		let guard = lock.write(key);
-
-		std::thread::scope(|s| {
-			s.spawn(|| {
-				let key = ThreadKey::get().unwrap();
-				let guard = collection.try_lock(key);
-				assert!(guard.is_err());
-			});
-		});
-
-		drop(guard);
-	}
-
-	#[test]
 	fn read_ref_as_ref() {
 		let key = ThreadKey::get().unwrap();
 		let lock = LockCollection::new(crate::RwLock::new("hi"));
@@ -574,23 +343,5 @@ mod tests {
 		assert_eq!(*guard.as_mut(), "hi");
 		*guard.as_mut() = "foo";
 		assert_eq!(*guard.as_mut(), "foo");
-	}
-
-	#[test]
-	fn poison_read_lock() {
-		let lock = crate::RwLock::new("hi");
-		let reader = ReadLock::new(&lock);
-
-		reader.poison();
-		assert!(lock.poison.is_poisoned());
-	}
-
-	#[test]
-	fn poison_write_lock() {
-		let lock = crate::RwLock::new("hi");
-		let reader = WriteLock::new(&lock);
-
-		reader.poison();
-		assert!(lock.poison.is_poisoned());
 	}
 }

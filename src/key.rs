@@ -26,7 +26,7 @@ pub struct ThreadKey {
 	phantom: PhantomData<*const ()>, // implement !Send and !Sync
 }
 
-/// Allows the type to be used as a key for a lock
+/// Allows the type to be used as a key for a scoped lock
 ///
 /// # Safety
 ///

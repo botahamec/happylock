@@ -38,12 +38,6 @@ impl<Guard> PoisonError<Guard> {
 	///
 	/// This is generally created by methods like [`Poisonable::lock`].
 	///
-	/// ```
-	/// use happylock::poisonable::PoisonError;
-	///
-	/// let error = PoisonError::new("oh no");
-	/// ```
-	///
 	/// [`Poisonable::lock`]: `crate::poisonable::Poisonable::lock`
 	#[must_use]
 	pub const fn new(guard: Guard) -> Self {
@@ -57,21 +51,21 @@ impl<Guard> PoisonError<Guard> {
 	///
 	/// ```
 	/// use std::collections::HashSet;
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
+	/// let mutex = Poisonable::new(Mutex::new(HashSet::new()));
 	///
 	/// // poison the mutex
-	/// let c_mutex = Arc::clone(&mutex);
-	/// let _ = thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let mut data = c_mutex.lock(key).unwrap();
-	///     data.insert(10);
-	///     panic!();
-	/// }).join();
+	/// thread::scope(|s| {
+	///     let r = s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let mut data = mutex.lock(key).unwrap();
+	///         data.insert(10);
+	///         panic!();
+	///     }).join();
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let p_err = mutex.lock(key).unwrap_err();
@@ -90,22 +84,22 @@ impl<Guard> PoisonError<Guard> {
 	///
 	/// ```
 	/// use std::collections::HashSet;
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	/// use happylock::poisonable::PoisonGuard;
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
+	/// let mutex = Poisonable::new(Mutex::new(HashSet::new()));
 	///
 	/// // poison the mutex
-	/// let c_mutex = Arc::clone(&mutex);
-	/// let _ = thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let mut data = c_mutex.lock(key).unwrap();
-	///     data.insert(10);
-	///     panic!();
-	/// }).join();
+	/// thread::scope(|s| {
+	///     let r = s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let mut data = mutex.lock(key).unwrap();
+	///         data.insert(10);
+	///         panic!();
+	///     }).join();
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let p_err = mutex.lock(key).unwrap_err();
@@ -124,21 +118,21 @@ impl<Guard> PoisonError<Guard> {
 	///
 	/// ```
 	/// use std::collections::HashSet;
-	/// use std::sync::Arc;
 	/// use std::thread;
 	///
 	/// use happylock::{Mutex, Poisonable, ThreadKey};
 	///
-	/// let mutex = Arc::new(Poisonable::new(Mutex::new(HashSet::new())));
+	/// let mutex =Poisonable::new(Mutex::new(HashSet::new()));
 	///
 	/// // poison the mutex
-	/// let c_mutex = Arc::clone(&mutex);
-	/// let _ = thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let mut data = c_mutex.lock(key).unwrap();
-	///     data.insert(10);
-	///     panic!();
-	/// }).join();
+	/// thread::scope(|s| {
+	///     let r = s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let mut data = mutex.lock(key).unwrap();
+	///         data.insert(10);
+	///         panic!();
+	///     }).join();
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// let mut p_err = mutex.lock(key).unwrap_err();

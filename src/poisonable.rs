@@ -8,6 +8,8 @@ mod flag;
 mod guard;
 mod poisonable;
 
+// TODO add helper types for poisonable mutex and so on
+
 /// A flag indicating if a lock is poisoned or not. The implementation differs
 /// depending on whether panics are set to unwind or abort.
 #[derive(Debug, Default)]
@@ -20,19 +22,25 @@ pub(crate) struct PoisonFlag(#[cfg(panic = "unwind")] AtomicBool);
 /// default, because the data may be tainted (some invariant of the data might
 /// not be upheld).
 ///
-/// The [`lock`] and [`try_lock`] methods return a [`Result`] which indicates
-/// whether the lock has been poisoned or not. The [`PoisonError`] type has an
-/// [`into_inner`] method which will return the guard that normally would have
-/// been returned for a successful lock. This allows access to the data,
-/// despite the lock being poisoned.
+/// The [`lock`], [`try_lock`], [`read`], and [`try_read`] methods return a
+/// [`Result`] which indicates whether the lock has been poisoned or not. The
+/// [`PoisonError`] type has an [`into_inner`] method which will return the
+/// guard that normally would have been returned for a successful lock. This
+/// allows access to the data, despite the lock being poisoned. The scoped
+/// locking methods (such as [`scoped_lock`]) will pass the [`Result`] into the
+/// given closure. Poisoning will occur if the closure panics.
 ///
 /// Alternatively, there is also a [`clear_poison`] method, which should
 /// indicate that all invariants of the underlying data are upheld, so that
 /// subsequent calls may still return [`Ok`].
 ///
+///
 /// [`Lockable`]: `crate::lockable::Lockable`
 /// [`lock`]: `Poisonable::lock`
 /// [`try_lock`]: `Poisonable::try_lock`
+/// [`read`]: `Poisonable::read`
+/// [`try_read`]: `Poisonable::try_read`
+/// [`scoped_lock`]: `Poisonable::scoped_lock`
 /// [`into_inner`]: `PoisonError::into_inner`
 /// [`clear_poison`]: `Poisonable::clear_poison`
 #[derive(Debug, Default)]
@@ -41,12 +49,23 @@ pub struct Poisonable<L> {
 	poisoned: PoisonFlag,
 }
 
-/// An RAII guard for a [`Poisonable`].
+/// An RAII guard for a [`Poisonable`]. When this structure is dropped (falls
+/// out of scope), the lock will be unlocked.
 ///
 /// This is similar to a [`PoisonGuard`], except that it does not hold a
-/// [`Keyable`]
+/// [`ThreadKey`].
 ///
-/// [`Keyable`]: `crate::Keyable`
+/// The data protected by the underlying lock can be accessed through this
+/// guard via its [`Deref`] and [`DerefMut`] implementations.
+///
+/// This structure is created when passing a `Poisonable` into another lock
+/// wrapper, such as [`LockCollection`], and obtaining a guard through the
+/// wrapper type.
+///
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
+/// [`ThreadKey`]: `crate::ThreadKey`
+/// [`LockCollection`]: `crate::LockCollection`
 pub struct PoisonRef<'a, G> {
 	guard: G,
 	#[cfg(panic = "unwind")]
@@ -54,15 +73,37 @@ pub struct PoisonRef<'a, G> {
 	_phantom: PhantomData<&'a ()>,
 }
 
-/// An RAII guard for a [`Poisonable`].
+/// An RAII guard for a [`Poisonable`]. When this structure is dropped (falls
+/// out of scope), the lock will be unlocked.
 ///
-/// This is created by calling methods like [`Poisonable::lock`].
+/// The data protected by the underlying lock can be accessed through this
+/// guard via its [`Deref`] and [`DerefMut`] implementations.
+///
+/// This method is created by calling the [`lock`], [`try_lock`], [`read`], and
+/// [`try_read`] methods on [`Poisonable`]
+///
+/// This guard holds a [`ThreadKey`], so it is not possible to lock anything
+/// else until this guard is dropped. The [`ThreadKey`] can be reacquired by
+/// calling [`Poisonable::unlock`], or [`Poisonable::unlock_read`].
+///
+/// [`lock`]: `Poisonable::lock`
+/// [`try_lock`]: `Poisonable::try_lock`
+/// [`read`]: `Poisonable::read`
+/// [`try_read`]: `Poisonable::try_read`
+/// [`Deref`]: `std::ops::Deref`
+/// [`DerefMut`]: `std::ops::DerefMut`
+/// [`ThreadKey`]: `crate::ThreadKey`
+/// [`LockCollection`]: `crate::LockCollection`
 pub struct PoisonGuard<'a, G> {
 	guard: PoisonRef<'a, G>,
 	key: ThreadKey,
 }
 
 /// A type of error which can be returned when acquiring a [`Poisonable`] lock.
+///
+/// A [`Poisonable`] is poisoned whenever a thread fails while the lock is
+/// held. For a lock in the poisoned state, unless the state is cleared
+/// manually, all future acquisitions will return this error.
 pub struct PoisonError<Guard> {
 	guard: Guard,
 }
@@ -78,7 +119,8 @@ pub enum TryLockPoisonableError<'flag, G> {
 /// A type alias for the result of a lock method which can poisoned.
 ///
 /// The [`Ok`] variant of this result indicates that the primitive was not
-/// poisoned, and the primitive was poisoned. Note that the [`Err`] variant
+/// poisoned, and the operation result is contained within. The [`Err`] variant
+/// indicates that the primitive was poisoned. Note that the [`Err`] variant
 /// *also* carries the associated guard, and it can be acquired through the
 /// [`into_inner`] method.
 ///

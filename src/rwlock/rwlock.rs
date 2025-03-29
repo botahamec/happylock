@@ -147,6 +147,8 @@ impl<T, R: RawRwLock> RwLock<T, R> {
 	/// use happylock::RwLock;
 	///
 	/// let lock = RwLock::new(5);
+	///
+	///
 	/// ```
 	#[must_use]
 	pub const fn new(data: T) -> Self {
@@ -211,9 +213,9 @@ impl<T, R> RwLock<T, R> {
 	/// ```
 	/// use happylock::{RwLock, ThreadKey};
 	///
+	///     let key = ThreadKey::get().unwrap();
 	/// let lock = RwLock::new(String::new());
 	/// {
-	///     let key = ThreadKey::get().unwrap();
 	///     let mut s = lock.write(key);
 	///     *s = "modified".to_owned();
 	/// }
@@ -228,7 +230,7 @@ impl<T, R> RwLock<T, R> {
 impl<T: ?Sized, R> RwLock<T, R> {
 	/// Returns a mutable reference to the underlying data.
 	///
-	/// Since this call borrows `RwLock` mutably, no actual locking is taking
+	/// Since this call borrows `RwLock` mutably, no actual locking needs to take
 	/// place. The mutable borrow statically guarantees that no locks exist.
 	///
 	/// # Examples
@@ -237,9 +239,9 @@ impl<T: ?Sized, R> RwLock<T, R> {
 	/// use happylock::{ThreadKey, RwLock};
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let mut mutex = RwLock::new(0);
-	/// *mutex.get_mut() = 10;
-	/// assert_eq!(*mutex.read(key), 10);
+	/// let mut lock = RwLock::new(0);
+	/// *lock.get_mut() = 10;
+	/// assert_eq!(*lock.read(key), 10);
 	/// ```
 	#[must_use]
 	pub fn get_mut(&mut self) -> &mut T {
@@ -349,7 +351,9 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	///
 	/// The calling thread will be blocked until there are no more writers
 	/// which hold the lock. There may be other readers currently inside the
-	/// lock when this method returns.
+	/// lock when this method returns. This method does not provide any guarantees
+	/// with respect to the ordering of whether contentious readers or writers
+	/// will acquire the lock first.
 	///
 	/// Returns an RAII guard which will release this thread's shared access
 	/// once it is dropped.
@@ -360,21 +364,21 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// # Examples
 	///
 	/// ```
-	/// use std::sync::Arc;
 	/// use std::thread;
 	/// use happylock::{RwLock, ThreadKey};
 	///
 	/// let key = ThreadKey::get().unwrap();
-	/// let lock = Arc::new(RwLock::new(1));
-	/// let c_lock = Arc::clone(&lock);
+	/// let lock = RwLock::new(1);
 	///
 	/// let n = lock.read(key);
 	/// assert_eq!(*n, 1);
 	///
-	/// thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let r = c_lock.read(key);
-	/// }).join().unwrap();
+	/// thread::scope(|s| {
+	///     s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let r = lock.read(key);
+	///     });
+	/// });
 	/// ```
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
@@ -400,8 +404,8 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	///
 	/// # Errors
 	///
-	/// If the `RwLock` could not be acquired because it was already locked
-	/// exclusively, then an error will be returned containing the given key.
+	/// This function will return an error containing the [`ThreadKey`] if the
+	/// `RwLock` could not be acquired because it was already locked exclusively.
 	///
 	/// # Examples
 	///
@@ -470,10 +474,11 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// let lock = RwLock::new(1);
 	///
-	/// match lock.try_write(key) {
-	///     Ok(n) => assert_eq!(*n, 1),
-	///     Err(_) => unreachable!(),
-	/// };
+	/// let mut n = lock.write(key);
+	/// *n = 2;
+	///
+	/// let key = RwLock::unlock_write(n);
+	/// assert_eq!(*lock.read(key), 2);
 	/// ```
 	///
 	/// [`ThreadKey`]: `crate::ThreadKey`
@@ -486,10 +491,11 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 		}
 	}
 
-	/// Attempts to lock this `RwLock` with exclusive write access.
+	/// Attempts to lock this `RwLock` with exclusive write access, without
+	/// blocking.
 	///
 	/// This function does not block. If the lock could not be acquired at this
-	/// time, then `None` is returned. Otherwise, an RAII guard is returned
+	/// time, then `Err` is returned. Otherwise, an RAII guard is returned
 	/// which will release the lock when it is dropped.
 	///
 	/// This function does not provide any guarantees with respect to the
@@ -498,8 +504,8 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	///
 	/// # Errors
 	///
-	/// If the `RwLock` could not be acquired because it was already locked,
-	/// then an error will be returned containing the given key.
+	/// This function will return an error containing the [`ThreadKey`] if the
+	/// `RwLock` could not be acquired because it was already locked exclusively.
 	///
 	/// # Examples
 	///
@@ -509,8 +515,17 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// let key = ThreadKey::get().unwrap();
 	/// let lock = RwLock::new(1);
 	///
+	/// let key = match lock.try_write(key) {
+	///     Ok(mut n) => {
+	///        assert_eq!(*n, 1);
+	///	       *n = 2;
+	///        RwLock::unlock_write(n)
+	///     }
+	///     Err(_) => unreachable!(),
+	/// };
+	///
 	/// let n = lock.read(key);
-	/// assert_eq!(*n, 1);
+	/// assert_eq!(*n, 2);
 	/// ```
 	pub fn try_write(&self, key: ThreadKey) -> Result<RwLockWriteGuard<'_, T, R>, ThreadKey> {
 		unsafe {
@@ -532,7 +547,7 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// Immediately drops the guard, and consequently releases the shared lock.
 	///
 	/// This function is equivalent to calling [`drop`] on the guard, except
-	/// that it returns the key that was used to create it. Alternately, the
+	/// that it returns the key that was used to create it. Alternatively, the
 	/// guard will be automatically dropped when it goes out of scope.
 	///
 	/// # Examples
@@ -556,9 +571,9 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// Immediately drops the guard, and consequently releases the exclusive
 	/// lock.
 	///
-	/// This function is equivalent to calling [`drop`] on the guard, except
-	/// that it returns the key that was used to create it. Alternately, the
-	/// guard will be automatically dropped when it goes out of scope.
+	/// This function is equivalent to calling [`drop`] on the guard, except that
+	/// it returns the key that was used to create it. Alternatively, the guard
+	/// will be automatically dropped when it goes out of scope.
 	///
 	/// # Examples
 	///
@@ -571,6 +586,9 @@ impl<T: ?Sized, R: RawRwLock> RwLock<T, R> {
 	/// let mut guard = lock.write(key);
 	/// *guard += 20;
 	/// let key = RwLock::unlock_write(guard);
+	///
+	/// let guard = lock.read(key);
+	/// assert_eq!(*guard, 20);
 	/// ```
 	#[must_use]
 	pub fn unlock_write(guard: RwLockWriteGuard<'_, T, R>) -> ThreadKey {

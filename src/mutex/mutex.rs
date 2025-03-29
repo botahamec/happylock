@@ -108,7 +108,7 @@ impl<T, R: RawMutex> LockableGetMut for Mutex<T, R> {
 unsafe impl<T, R: RawMutex> OwnedLockable for Mutex<T, R> {}
 
 impl<T, R: RawMutex> Mutex<T, R> {
-	/// Create a new unlocked `Mutex`.
+	/// Creates a `Mutex` in an unlocked state ready for use.
 	///
 	/// # Examples
 	///
@@ -283,25 +283,30 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 }
 
 impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
-	/// Block the thread until this mutex can be locked, and lock it.
+	/// Acquires a mutex, blocking the current thread until it is able to do so.
 	///
-	/// Upon returning, the thread is the only thread with a lock on the
-	/// `Mutex`. A [`MutexGuard`] is returned to allow a scoped unlock of this
-	/// `Mutex`. When the guard is dropped, this `Mutex` will unlock.
+	/// This function will block the local thread until it is available to acquire
+	/// the mutex. Upon returning, the thread is the only thread with the lock
+	/// held. A [`MutexGuard`] is returned to allow a scoped unlock of this
+	/// `Mutex`. When the guard goes out of scope, this `Mutex` will unlock.
+	///
+	/// Due to the requirement of a [`ThreadKey`] to call this function, it is not
+	/// possible for this function to deadlock.
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use std::{thread, sync::Arc};
+	/// use std::thread;
 	/// use happylock::{Mutex, ThreadKey};
 	///
-	/// let mutex = Arc::new(Mutex::new(0));
-	/// let c_mutex = Arc::clone(&mutex);
+	/// let mutex = Mutex::new(0);
 	///
-	/// thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     *c_mutex.lock(key) = 10;
-	/// }).join().expect("thread::spawn failed");
+	/// thread::scope(|s| {
+	///     s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         *mutex.lock(key) = 10;
+	///     });
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
@@ -316,35 +321,36 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 		}
 	}
 
-	/// Attempts to lock the `Mutex` without blocking.
+	/// Attempts to lock this `Mutex` without blocking.
 	///
-	/// If the access could not be granted at this time, then `Err` is
-	/// returned. Otherwise, an RAII guard is returned which will release the
-	/// lock when it is dropped.
+	/// If the lock could not be acquired at this time, then `Err` is returned.
+	/// Otherwise, an RAII guard is returned. The lock will be unlocked when the
+	/// guard is dropped.
 	///
 	/// # Errors
 	///
 	/// If the mutex could not be acquired because it is already locked, then
-	/// this call will return an error containing the given key.
+	/// this call will return an error containing the [`ThreadKey`].
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use std::{thread, sync::Arc};
+	/// use std::thread;
 	/// use happylock::{Mutex, ThreadKey};
 	///
-	/// let mutex = Arc::new(Mutex::new(0));
-	/// let c_mutex = Arc::clone(&mutex);
+	/// let mutex = Mutex::new(0);
 	///
-	/// thread::spawn(move || {
-	///     let key = ThreadKey::get().unwrap();
-	///     let mut lock = c_mutex.try_lock(key);
-	///     if let Ok(mut lock) = lock {
-	///         *lock = 10;
-	///     } else {
-	///         println!("try_lock failed");
-	///     }
-	/// }).join().expect("thread::spawn failed");
+	/// thread::scope(|s| {
+	///     s.spawn(|| {
+	///         let key = ThreadKey::get().unwrap();
+	///         let mut lock = mutex.try_lock(key);
+	///         if let Ok(mut lock) = lock {
+	///             *lock = 10;
+	///         } else {
+	///             println!("try_lock failed");
+	///         }
+	///     });
+	/// });
 	///
 	/// let key = ThreadKey::get().unwrap();
 	/// assert_eq!(*mutex.lock(key), 10);
@@ -375,6 +381,10 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 
 	/// Consumes the [`MutexGuard`], and consequently unlocks its `Mutex`.
 	///
+	/// This function is equivalent to calling [`drop`] on the guard, except that
+	/// it returns the key that was used to create it. Alernatively, the guard
+	/// will be automatically dropped when it goes out of scope.
+	///
 	/// # Examples
 	///
 	/// ```
@@ -387,6 +397,9 @@ impl<T: ?Sized, R: RawMutex> Mutex<T, R> {
 	/// *guard += 20;
 	///
 	/// let key = Mutex::unlock(guard);
+	///
+	/// let guard = mutex.lock(key);
+	/// assert_eq!(*guard, 20);
 	/// ```
 	#[must_use]
 	pub fn unlock(guard: MutexGuard<'_, T, R>) -> ThreadKey {
